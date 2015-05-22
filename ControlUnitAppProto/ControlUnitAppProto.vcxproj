@@ -110,6 +110,7 @@
     <ClInclude Include="ControlUnitAppProtoView.h" />
     <ClInclude Include="MainFrm.h" />
     <ClInclude Include="Resource.h" />
+    <ClInclude Include="SingleTrimController.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="TestDialog.h" />
@@ -123,6 +124,7 @@
     <ClCompile Include="ControlUnitAppProtoDoc.cpp" />
     <ClCompile Include="ControlUnitAppProtoView.cpp" />
     <ClCompile Include="MainFrm.cpp" />
+    <ClCompile Include="SingleTrimController.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>

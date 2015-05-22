@@ -21,6 +21,8 @@
 #define new DEBUG_NEW
 #endif
 
+#define PROTOTYPEMODE
+
 
 // CControlUnitAppProtoView
 
@@ -35,6 +37,8 @@ BEGIN_MESSAGE_MAP(CControlUnitAppProtoView, CView)
 	ON_WM_PAINT()
 	ON_WM_ERASEBKGND()
 	ON_WM_CREATE()
+	ON_WM_LBUTTONDBLCLK()
+	ON_WM_RBUTTONDBLCLK()
 END_MESSAGE_MAP()
 
 // CControlUnitAppProtoView コンストラクション/デストラクション
@@ -47,43 +51,28 @@ CControlUnitAppProtoView::CControlUnitAppProtoView()
 	m_clClipData1 = new ClipDataTest();
 	m_clClipData2 = new ClipDataTest();
 	m_clClipData1->m_iTimelineInPoint = 101;
-	m_clClipData1->SetDuration(50);
+	m_clClipData1->SetDuration(10);
 	m_clClipData2->m_iTimelineInPoint = 600;
 	m_clClipData2->SetDuration(100);
 
-	//CRect rcWorkRect;
-	//rcWorkRect.SetRect(10, 0, 200, 100);
-	//m_clClipData1->SetCurrentRect(&rcWorkRect);
-	//rcWorkRect.SetRect(500, 0, 800, 100);
-	//m_clClipData2->SetCurrentRect(&rcWorkRect);
 	m_fLButtonClicking = FALSE;
 	m_fMoving = FALSE;
 	m_fInTriming = FALSE;
 	m_fOutTriming = FALSE;
 	m_fScrubing = FALSE;
+	m_fShuttling = FALSE;
+
 	m_rcPreviewPanelRect.bottom = m_rcPreviewPanelRect.top + kPreviewPanelDefaltHeight;
-	m_rcControlPanelRect.bottom = m_rcControlPanelRect.top + kControlPanelDefaltHeight;
-	m_rcTimelineEditPanelRect.bottom = m_rcTimelineEditPanelRect.top + kTimelineEditDefaltHeight;
+	//m_rcTimelineEditPanelRect.bottom = m_rcTimelineEditPanelRect.top + kTimelineEditDefaltHeight;
 
 	m_iLeftFrameNumber = 0;
 	m_iRightFrameNumber = 0;
 	m_iTimelineCursorFrameNumber = 0;
-	m_iScrubingFrameCount = 0;
+	m_iOperatingFrameCount = 0;
+	m_iOperatingClipFrameCount = 0;
 
-	m_iFramePerBase = 60;
-	m_fPointPerFrame = static_cast<float>(kSeekBarScaleBaseWidth) / static_cast<float>(m_iFramePerBase);
-	if (m_iFramePerBase < kSeekBarSmallScaleCount)
-	{
-		m_iSeekBarSmallScaleCount = m_iFramePerBase;
-	} 
-	else
-	{
-		m_iSeekBarSmallScaleCount = kSeekBarSmallScaleCount;
-	}
-	m_iSmallScaleLength = kSeekBarScaleBaseWidth / m_iSeekBarSmallScaleCount;
-
-	//TestDialog td = new TestDialog();
-	//td.DoModal();
+	m_iSelectedDisplayScaleNumber = 8;
+	ChangeDisplayScale();
 
 
 }
@@ -113,10 +102,22 @@ void CControlUnitAppProtoView::OnDraw(CDC* /*pDC*/)
 	// TODO: この場所にネイティブ データ用の描画コードを追加します。
 }
 
+// 右ボタンアップ
 void CControlUnitAppProtoView::OnRButtonUp(UINT /* nFlags */, CPoint point)
 {
-	ClientToScreen(&point);
-	OnContextMenu(this, point);
+	if (m_rcTimelineControlPanelRect.PtInRect(point))
+	{
+		++m_iSelectedDisplayScaleNumber;
+		if (ChangeDisplayScale())
+		{
+			Invalidate();
+		}
+	}
+	else
+	{
+		ClientToScreen(&point);
+		OnContextMenu(this, point);
+	}
 }
 
 void CControlUnitAppProtoView::OnContextMenu(CWnd* /* pWnd */, CPoint point)
@@ -150,11 +151,12 @@ CControlUnitAppProtoDoc* CControlUnitAppProtoView::GetDocument() const // デバッ
 
 // CControlUnitAppProtoView メッセージ ハンドラー
 
-
+// 左ボタンダウン
 void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 {
 	// TODO: ここにメッセージ ハンドラー コードを追加するか、既定の処理を呼び出します。
 
+	// クリップ内判定
 	if (IsPointInAnyClipRect(point))
 	{
 		m_fLButtonClicking = TRUE;
@@ -162,24 +164,48 @@ void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 		m_poMousePointerLocation = point;	// 移動量計算のため、初期座標を保存
 		m_rcMovingRect.CopyRect(m_rcClipDisplayRect);
 		m_rcBorderRect.CopyRect(m_rcClipDisplayRect);
+		m_iOperatingClipFrameCount = 0;
+		Invalidate();
 	}
 	else
 	{
-		m_clMovingClipData = NULL;
-		m_clStaticClipData = NULL;
+		m_clMovingClipData = nullptr;
+		m_clStaticClipData = nullptr;
+		// シークバー内判定
 		if (IsPointInSeekBar(point))
 		{
 			m_fLButtonClicking = TRUE;
+			m_fScrubing = TRUE;
 			SetCapture(); // マウスをキャプチャー( OnLButtonUp()で解放)
 			m_poMousePointerLocation = point;	// 移動量計算のため、初期座標を保存
-			m_iScrubingFrameCount = 0;
+			m_iOperatingFrameCount = 0;
+		}
+		// タイムラインコントロールパネル内判定
+		else if (m_rcTimelineControlPanelRect.PtInRect(point))
+		{
+			--m_iSelectedDisplayScaleNumber;
+			if (ChangeDisplayScale())
+			{
+				Invalidate();
+			}
+		}
+		// タイムラインカーソル判定
+		else if (m_rcTimelineCursorHitArea.PtInRect(point))
+		{
+			m_fLButtonClicking = TRUE;
+			m_fShuttling = TRUE;
+			SetCapture(); // マウスをキャプチャー( OnLButtonUp()で解放)
+			m_poMousePointerLocation = point;	// 移動量計算のため、初期座標を保存
+			m_iOperatingFrameCount = 0;
+			m_fSuttleSpeed = 0;
+			Invalidate();
 		}
 	}
 
 	CView::OnLButtonDown(nFlags, point);
 }
 
-
+// 左ボタンアップ
 void CControlUnitAppProtoView::OnLButtonUp(UINT nFlags, CPoint point)
 {
 	// TODO: ここにメッセージ ハンドラー コードを追加するか、既定の処理を呼び出します。
@@ -187,16 +213,9 @@ void CControlUnitAppProtoView::OnLButtonUp(UINT nFlags, CPoint point)
 	m_fLButtonClicking = FALSE; // フラグを下げる
 	ReleaseCapture(); // マウスを解放します。
 
-	CSize szMoveSize(point - m_poMousePointerLocation); // マウスのボタンが最初に押された位置からの偏移
-	CRect rcWorkRect;
-
 	if (m_fMoving)
 	{
-		long lMoveDistance = m_rcMovingRect.left - m_rcClipDisplayRect.left;
-		m_rcClipDisplayRect.MoveToX(m_rcClipDisplayRect.left + lMoveDistance);
-		m_clMovingClipData->SetDisplayRect(m_rcClipDisplayRect);
-		m_rcClipRect.MoveToX(m_rcClipRect.left + lMoveDistance);
-		m_clMovingClipData->SetCurrentRect(m_rcClipRect);
+		m_clMovingClipData->m_iTimelineInPoint += m_iOperatingClipFrameCount;
 	} 
 	else if (m_fInTriming)
 	{
@@ -214,14 +233,15 @@ void CControlUnitAppProtoView::OnLButtonUp(UINT nFlags, CPoint point)
 	}
 	else if (m_fScrubing)
 	{
-		m_iTimelineCursorFrameNumber += m_iScrubingFrameCount;
+		m_iTimelineCursorFrameNumber += m_iOperatingFrameCount;
 	}
 
 	m_rcClipRect.SetRectEmpty();
 	m_rcClipDisplayRect.SetRectEmpty();
 	m_rcMovingRect.SetRectEmpty();
 	m_rcBorderRect.SetRectEmpty();
-	m_iScrubingFrameCount = 0;
+	m_iOperatingFrameCount = 0;
+	m_iOperatingClipFrameCount = 0;
 
 	Invalidate(); // 再描画します。
 
@@ -229,36 +249,50 @@ void CControlUnitAppProtoView::OnLButtonUp(UINT nFlags, CPoint point)
 	m_fInTriming = FALSE;
 	m_fOutTriming = FALSE;
 	m_fScrubing = FALSE;
+	m_fShuttling = FALSE;
 
 
 	CView::OnLButtonUp(nFlags, point);
 }
 
-
+// ドラッグ操作
 void CControlUnitAppProtoView::OnMouseMove(UINT nFlags, CPoint point)
 {
 	// TODO: ここにメッセージ ハンドラー コードを追加するか、既定の処理を呼び出します。
 
 	if (m_fLButtonClicking) 
 	{
+		CSize szMoveSize(point - m_poMousePointerLocation);
 		if (m_fMoving)
 		{
-			CDC* pDC = GetDC();
-			CSize szMoveSize(point - m_poMousePointerLocation);
-			// フレーム単位の移動幅に変換して、それをin点に足してrectを出す
-			int iMoveFrame = szMoveSize.cx / m_fPointPerFrame;
-			CalcClipRectDisplayPoint(m_rcClipDisplayRect, m_clMovingClipData, iMoveFrame);
-			//m_rcMovingRect.CopyRect(m_rcClipDisplayRect); //  ドロップ位置のイメージ座標
-			//m_rcMovingRect.MoveToX(m_rcMovingRect.left + szMoveSize.cx);
-			//m_rcBorderRect.CopyRect(m_rcClipDisplayRect); //  マウス位置のイメージ座標
-			//m_rcBorderRect.MoveToX(m_rcBorderRect.left + szMoveSize.cx);
+			// １ポイントあたりのフレーム数が１未満の場合（１フレームが複数ポイントに跨る）
+			if (m_fFramePerPoint < 1)
+			{
+				// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（必要な幅を動かさないとフレームは動かない）
+				m_iOperatingClipFrameCount = static_cast<int>(floor(szMoveSize.cx * m_fFramePerPoint));
+			}
+			else
+			{
+				// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（１ポイントで複数フレーム動く）
+				m_iOperatingClipFrameCount = szMoveSize.cx * m_fFramePerPoint;
+				// 倍率変更により表示に切りの良いフレーム位置でない場合は調整する
+				int iSurPlus = (m_clMovingClipData->m_iTimelineInPoint + m_iOperatingClipFrameCount) % static_cast<int>(m_fFramePerPoint);
+				if (iSurPlus != 0)
+				{
+					m_iOperatingClipFrameCount -= iSurPlus;
+				}
+			}
 			CheckMove(point);
+
+			m_rcMovingRect.CopyRect(m_rcClipDisplayRect); //  ドロップ位置のイメージ座標
+			m_rcBorderRect.CopyRect(m_rcClipDisplayRect); //  マウス位置のイメージ座標
+			CalcClipRectDisplayPoint(m_rcMovingRect, m_clMovingClipData, m_iOperatingClipFrameCount);
+			CalcClipRectDisplayPoint(m_rcBorderRect, m_clMovingClipData, m_iOperatingClipFrameCount);
+
 			Invalidate();
-			ReleaseDC(pDC);
 		}
 		else if (m_fInTriming || m_fOutTriming)
 		{
-			CSize szMoveSize(point - m_poMousePointerLocation);
 			m_rcMovingRect.CopyRect(m_rcClipDisplayRect); // 伸縮分のイメージ座標
 			if (m_fInTriming)
 			{
@@ -274,12 +308,35 @@ void CControlUnitAppProtoView::OnMouseMove(UINT nFlags, CPoint point)
 		}
 		else if (m_fScrubing)
 		{
-			CSize szMoveSize(point - m_poMousePointerLocation);
-			m_iScrubingFrameCount = static_cast<int>(floor(szMoveSize.cx / m_fPointPerFrame));
-			if ((m_iTimelineCursorFrameNumber + m_iScrubingFrameCount) < 0)
+			// １ポイントあたりのフレーム数が１未満の場合（１フレームが複数ポイントに跨る）
+			if (m_fFramePerPoint < 1)
 			{
-				m_iScrubingFrameCount = -1 * m_iTimelineCursorFrameNumber;
+				// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（必要な幅を動かさないとフレームは動かない）
+				m_iOperatingFrameCount = static_cast<int>(floor(szMoveSize.cx * m_fFramePerPoint));
 			}
+			else
+			{
+				// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（１ポイントで複数フレーム動く）
+				m_iOperatingFrameCount = szMoveSize.cx * m_fFramePerPoint;
+				// 倍率変更により表示に切りの良いフレーム位置でない場合は調整する
+				int iSurPlus = (m_iTimelineCursorFrameNumber + m_iOperatingFrameCount) % static_cast<int>(m_fFramePerPoint);
+				if (iSurPlus != 0)
+				{
+					m_iOperatingFrameCount -= iSurPlus;
+				}
+			}
+			// 最小範囲チェック
+			// TODO: 最大範囲チェックは？
+			if ((m_iTimelineCursorFrameNumber + m_iOperatingFrameCount) < 0)
+			{
+				m_iOperatingFrameCount = -1 * m_iTimelineCursorFrameNumber;
+			}
+			Invalidate();
+		}
+		else if (m_fShuttling)
+		{
+			// マウス位置から倍速速度を取得
+			m_fSuttleSpeed = SetShuttleSpeed(point, szMoveSize);
 			Invalidate();
 		}
 	}
@@ -315,10 +372,16 @@ void CControlUnitAppProtoView::OnPaint()
 	dcMemDc.FillRect(&rcViewRect, &brBaseBrush);
 
 	// 枠描画
-	CPen brPenBrush(PS_SOLID, kTimelineDataDisplayBorderThikness, LIGHTGRAYCOLOR_BRUSH);
+	CPen brPenBrush(PS_SOLID, 1, LIGHTGRAYCOLOR_BRUSH);
 	CPen* oldpen = dcMemDc.SelectObject(&brPenBrush);
 	dcMemDc.Rectangle(m_rcPreviewPanelRect);
+	dcMemDc.Rectangle(m_rcTimelineControlPanelRect);
+	dcMemDc.Rectangle(m_rcTrackHeaderRect);
+	dcMemDc.Rectangle(m_rcTimelineDataRect);
 	dcMemDc.SelectObject(oldpen);
+
+	// コントロールパネル描画
+	DrawTimelineControlPanel(dcMemDc);
 
 	// シークバー描画
 	DrawSeekBar(dcMemDc);
@@ -337,7 +400,7 @@ void CControlUnitAppProtoView::OnPaint()
 		DrawOperatingClip(&dcViewDc, rcViewRect, dcMemDc);
 	}
 
-	// タイムラインカーソル描画
+	// タイムラインカーソル／シャトル操作補助線描画
 	DrawTimelineCursor(&dcViewDc, rcViewRect, dcMemDc);
 
 	//--------- ここからダブルバッファ用コード
@@ -355,6 +418,416 @@ void CControlUnitAppProtoView::OnPaint()
 
 }
 
+// タイムラインコントロールパネルの描画を行う
+void CControlUnitAppProtoView::DrawTimelineControlPanel(CDC& dcMemDc)
+{
+	// 背景塗りつぶし
+	CBrush brControlPanelBaseBrush(TIMELINECONTROLPANELBACKGROUNDCOLOR_BRUSH);
+	dcMemDc.FillRect(m_rcTimelineControlPanelRect, &brControlPanelBaseBrush);
+	brControlPanelBaseBrush.DeleteObject();
+
+#ifdef PROTOTYPEMODE
+	CString strText;
+	int iOldBkMode;
+	iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
+	COLORREF crOldTextColor = dcMemDc.SetTextColor(SEEKBARTIMECODETEXTCOLOR_BRUSH);
+	strText.Format(_T("%d"), m_iFramePerBase);
+	dcMemDc.TextOut(m_rcTimelineControlPanelRect.left + 5, m_rcTimelineControlPanelRect.bottom - 20, strText);
+	dcMemDc.SetBkMode(iOldBkMode);
+	dcMemDc.SetTextColor(crOldTextColor);
+#endif
+}
+
+// シークバーの描画を行う
+void CControlUnitAppProtoView::DrawSeekBar(CDC& dcMemDc)
+{
+	// 背景塗りつぶし
+	CBrush brSeekBarBaseBrush(SEEKBARBACKGROUNDCOLOR_BRUSH);
+	dcMemDc.FillRect(m_rcSeekBarRect, &brSeekBarBaseBrush);
+
+	CPen brSeekBarBigScalePen(PS_SOLID, kSeekBarMiddleScaleThikness, SEEKBARBIGSCALECOLOR_BRUSH);
+	CPen brSeekBarMiddleScalePen(PS_SOLID, kSeekBarMiddleScaleThikness, SEEKBARMIDDLESCALECOLOR_BRUSH);
+	CPen brSeekBarSmallScalePen(PS_SOLID, kSeekBarSmallScaleThikness, SEEKBARSMALLSCALECOLOR_BRUSH);
+	CPen brSeekBarBigScaleLinePen(PS_SOLID, kSeekBarMiddleScaleThikness, SEEKBARBIGSCALELINECOLOR_BRUSH);
+	CPen brSeekBarMiddleScaleLinePen(PS_SOLID, kSeekBarMiddleScaleThikness, SEEKBARMIDDLESCALELINECOLOR_BRUSH);
+	CPen brSeekBarSmallScaleLinePen(PS_SOLID, kSeekBarSmallScaleThikness, SEEKBARSMALLSCALELINECOLOR_BRUSH);
+	CPen* oldpen = dcMemDc.SelectObject(&brSeekBarMiddleScalePen);
+
+	POINT pScaleLine;
+	pScaleLine.x = m_iTimelineCursorPoint;
+	pScaleLine.y = m_rcSeekBarRect.top;
+	int iDrawFrame = m_iTimelineCursorFrameNumber + m_iOperatingFrameCount;
+
+	// カーソルから右側の目盛り描画
+	while (pScaleLine.x < m_rcSeekBarRect.right)
+	{
+		if (iDrawFrame == m_iTimelineCursorFrameNumber)
+		{
+			//TODO: デバッグ
+			CString strText;
+			strText.Format(_T("CURSOR SEEKBAR  %d"), m_iRightFrameNumber + pScaleLine.x);
+			dcMemDc.TextOutW(5, 85, strText);
+		}
+		// 大目盛り
+		if ((iDrawFrame % (kSeekBarBigScaleInterval * m_iFramePerBase)) == 0)
+		{
+			if (iDrawFrame >= 0)
+			{
+				DrawBigScale(dcMemDc, iDrawFrame, brSeekBarBigScalePen, brSeekBarBigScaleLinePen, pScaleLine);
+			}
+		}
+		// 中目盛り
+		else if ((iDrawFrame % m_iFramePerBase) == 0)
+		{
+			if (iDrawFrame >= 0)
+			{
+				DrawMiddleScale(dcMemDc, iDrawFrame, brSeekBarMiddleScalePen, brSeekBarMiddleScaleLinePen, pScaleLine);
+			}
+		}
+		// 小目盛り
+		else if ((iDrawFrame % m_iFramePerScale) == 0)
+		{
+			if (iDrawFrame >= 0)
+			{
+				DrawSmallScale(dcMemDc, iDrawFrame, brSeekBarSmallScaleLinePen, brSeekBarSmallScaleLinePen, pScaleLine);
+			}
+		}
+		if (m_fFramePerPoint < 1)
+		{
+			pScaleLine.x += m_fPointPerFrame;
+		}
+		else
+		{
+			if ((iDrawFrame % static_cast<int>(m_fFramePerPoint)) == 0)
+			{
+				++pScaleLine.x;
+			}
+		}
+		++iDrawFrame;
+	}
+	// カーソルから左側の目盛り描画
+	pScaleLine.x = m_iTimelineCursorPoint;
+	pScaleLine.y = m_rcSeekBarRect.top;
+	iDrawFrame = m_iTimelineCursorFrameNumber + m_iOperatingFrameCount;
+	while ((pScaleLine.x > m_rcSeekBarRect.left) && (iDrawFrame >= 0))
+	{
+		// 大目盛り
+		if ((iDrawFrame % (kSeekBarBigScaleInterval * m_iFramePerBase)) == 0)
+		{
+			DrawBigScale(dcMemDc, iDrawFrame, brSeekBarBigScalePen, brSeekBarBigScaleLinePen, pScaleLine);
+		}
+		// 中目盛り
+		else if ((iDrawFrame % m_iFramePerBase) == 0)
+		{
+			DrawMiddleScale(dcMemDc, iDrawFrame, brSeekBarMiddleScalePen, brSeekBarMiddleScaleLinePen, pScaleLine);
+		}
+		// 小目盛り
+		else if ((iDrawFrame % m_iFramePerScale) == 0)
+		{
+			DrawSmallScale(dcMemDc, iDrawFrame, brSeekBarSmallScaleLinePen, brSeekBarSmallScaleLinePen, pScaleLine);
+		}
+		if (m_fFramePerPoint < 1)
+		{
+			pScaleLine.x -= m_fPointPerFrame;
+		}
+		else
+		{
+			if ((iDrawFrame % static_cast<int>(m_fFramePerPoint)) == 0)
+			{
+				--pScaleLine.x;
+			}
+		}
+		--iDrawFrame;
+	}
+	dcMemDc.SelectObject(oldpen);
+
+#ifdef PROTOTYPEMODE
+	CString strFrameNumber;
+	strFrameNumber.Format(_T("%d"), m_iTimelineCursorFrameNumber + m_iOperatingFrameCount);
+	dcMemDc.TextOutW(5, 5, strFrameNumber);
+	strFrameNumber.Format(_T("%d"), m_iLeftFrameNumber + m_iOperatingFrameCount);
+	dcMemDc.TextOutW(5, 40, strFrameNumber);
+	strFrameNumber.Format(_T("%d"), m_iRightFrameNumber + m_iOperatingFrameCount);
+	dcMemDc.TextOutW(5, 65, strFrameNumber);
+#endif
+
+	brSeekBarBaseBrush.DeleteObject();
+	brSeekBarBigScalePen.DeleteObject();
+	brSeekBarMiddleScalePen.DeleteObject();
+	brSeekBarSmallScalePen.DeleteObject();
+	brSeekBarBigScaleLinePen.DeleteObject();
+	brSeekBarMiddleScaleLinePen.DeleteObject();
+	brSeekBarSmallScaleLinePen.DeleteObject();
+
+}
+
+// 大目盛り描画
+void CControlUnitAppProtoView::DrawBigScale(CDC& dcMemDc, const int iDrawFrame,  const CPen& brScalePen, const CPen& brLinePen, POINT& pScaleLine)
+{
+	CString strFrameNumber;
+#ifdef PROTOTYPEMODE
+	int iOldBkMode;
+#endif
+
+	// TODO: 製品はタイムコードを表示
+	iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
+	COLORREF crOldTextColor = dcMemDc.SetTextColor(SEEKBARTIMECODETEXTCOLOR_BRUSH);
+	strFrameNumber.Format(_T("%d"), iDrawFrame);
+	dcMemDc.TextOut(pScaleLine.x + 2, m_rcSeekBarRect.top + 2, strFrameNumber);
+	dcMemDc.SetBkMode(iOldBkMode);
+	dcMemDc.SetTextColor(crOldTextColor);
+
+	dcMemDc.SelectObject(brScalePen);
+	pScaleLine.y = m_rcSeekBarRect.top + kSeekBarBigScaleMargin;
+	dcMemDc.MoveTo(pScaleLine);
+	pScaleLine.y = m_rcSeekBarRect.bottom;
+	dcMemDc.LineTo(pScaleLine);
+	dcMemDc.SelectObject(brLinePen);
+	pScaleLine.y = m_rcTimelineDataRect.bottom;
+	dcMemDc.LineTo(pScaleLine);
+
+	return;
+}
+
+// 中目盛り描画
+void CControlUnitAppProtoView::DrawMiddleScale(CDC& dcMemDc, const int iDrawFrame, const CPen& brScalePen, const CPen& brLinePen, POINT& pScaleLine)
+{
+	CString strFrameNumber;
+#ifdef PROTOTYPEMODE
+	int iOldBkMode;
+#endif
+
+	// TODO: デバッグ用表示なのでとる事
+#ifdef PROTOTYPEMODE
+	iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
+	COLORREF crOldTextColor = dcMemDc.SetTextColor(SEEKBARTIMECODETEXTCOLOR_BRUSH);
+	strFrameNumber.Format(_T("%d"), (iDrawFrame % (kSeekBarBigScaleInterval * m_iSeekBarScaleCountPerBase)));
+	dcMemDc.TextOut(pScaleLine.x + 2, m_rcSeekBarRect.top + 6, strFrameNumber);
+	dcMemDc.SetBkMode(iOldBkMode);
+	dcMemDc.SetTextColor(crOldTextColor);
+#endif
+	dcMemDc.SelectObject(brScalePen);
+	pScaleLine.y = m_rcSeekBarRect.top + kSeekBarMiddleScaleMargin;
+	dcMemDc.MoveTo(pScaleLine);
+	pScaleLine.y = m_rcSeekBarRect.bottom;
+	dcMemDc.LineTo(pScaleLine);
+#ifdef PROTOTYPEMODE
+	dcMemDc.SelectObject(brLinePen);
+	pScaleLine.y = m_rcTimelineDataRect.bottom;
+	dcMemDc.LineTo(pScaleLine);
+#endif
+
+	return;
+}
+
+// 小目盛り描画
+void CControlUnitAppProtoView::DrawSmallScale(CDC& dcMemDc, const int iDrawFrame, const CPen& brScalePen, const CPen& brLinePen, POINT& pScaleLine)
+{
+	CString strFrameNumber;
+
+	dcMemDc.SelectObject(brScalePen);
+	pScaleLine.y = m_rcSeekBarRect.top + kSeekBarSmallScaleMargin;
+	dcMemDc.MoveTo(pScaleLine);
+	pScaleLine.y = m_rcSeekBarRect.bottom;
+	dcMemDc.LineTo(pScaleLine);
+#ifdef PROTOTYPEMODE
+	dcMemDc.SelectObject(brLinePen);
+	pScaleLine.y = m_rcTimelineDataRect.bottom;
+	dcMemDc.LineTo(pScaleLine);
+#endif
+
+	return;
+}
+
+
+// 操作中クリップの描画を行う
+BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRect& rcViewRect, CDC& dcMemDc)
+{
+	if (dcViewDc == nullptr)
+	{
+		return FALSE;
+	}
+
+	//操作イメージ用デバイスコンテキスト作成
+	// 仮想デバイスコンテキストを作成
+	CDC dcMovingMemDc;
+	dcMovingMemDc.CreateCompatibleDC(const_cast<CDC*>(dcViewDc));
+	CBitmap bmMovingScreenBitmap;
+	bmMovingScreenBitmap.CreateCompatibleBitmap(const_cast<CDC*>(dcViewDc), rcViewRect.Width(), rcViewRect.Height());
+	CBitmap* bmOldMovingScreenBitmap = dcMovingMemDc.SelectObject(&bmMovingScreenBitmap);
+	// 透過ブレンド用データ
+	BLENDFUNCTION blAlphaBlend;
+	blAlphaBlend.BlendOp = AC_SRC_OVER;
+	blAlphaBlend.BlendFlags = 0;
+	blAlphaBlend.SourceConstantAlpha = kMovingClipAlpha;
+	blAlphaBlend.AlphaFormat = 0;
+
+	// 元のクリップの色を変える
+	CBrush brMovingClipBrush(LIGHTGRAYCOLOR_BRUSH);
+	CRect crClipRect;
+	CalcClipRectDisplayPoint(crClipRect, m_clMovingClipData);
+	dcMemDc.FillRect(&crClipRect, &brMovingClipBrush);
+	brMovingClipBrush.DeleteObject();
+
+	CBrush brClipBrush(CLIPCOLOR_BRUSH);
+
+	if (m_fInTriming || m_fOutTriming)
+	{
+		//CBrush brClipTrimBrush(ACCENTCOLOR_BRUSH);
+		dcMovingMemDc.FillRect(&m_rcMovingRect, &brClipBrush);
+		//brClipTrimBrush.DeleteObject();
+		dcMemDc.AlphaBlend(m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
+			&dcMovingMemDc, m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
+			blAlphaBlend);
+	}
+	else
+	{
+		// ドロップ位置用
+		//CBrush brClipMoveBrush(ACCENTCOLOR_BRUSH);
+		dcMovingMemDc.FillRect(&m_rcMovingRect, &brClipBrush);
+		//brClipMoveBrush.DeleteObject();
+		dcMemDc.AlphaBlend(m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
+			&dcMovingMemDc, m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
+			blAlphaBlend);
+
+		//TODO: デバッグ
+		CString strText;
+		strText.Format(_T("MovingClipInPoint  %d"), m_clMovingClipData->m_iTimelineInPoint + m_iOperatingClipFrameCount);
+		dcMemDc.TextOutW(300, 5, strText);
+		strText.Format(_T("MovingClipLeftPoint  %d"), m_rcMovingRect.left);
+		dcMemDc.TextOutW(300, 25, strText);
+
+		// マウス位置追随用
+		if (!(m_rcBorderRect.EqualRect(m_rcMovingRect)))
+		{
+			CBrush brClipOverlapBrush(CLIPOVERLAPPINGCOLOR_BRUSH);
+			dcMovingMemDc.FillRect(&m_rcBorderRect, &brClipOverlapBrush);
+			blAlphaBlend.SourceConstantAlpha = kMovingClipOverlappingAlpha;
+			dcMemDc.AlphaBlend(m_rcBorderRect.left, m_rcBorderRect.top, m_rcBorderRect.Width(), m_rcBorderRect.Height(),
+				&dcMovingMemDc, m_rcBorderRect.left, m_rcBorderRect.top, m_rcBorderRect.Width(), m_rcBorderRect.Height(),
+				blAlphaBlend);
+			strText.Format(_T("ClipBorderLeftPoint  %d"), m_rcBorderRect.left);
+			dcMemDc.TextOutW(300, 45, strText);
+		}
+	}
+	// 仮想デバイスコンテキストビットマップの初期化・破棄
+	dcMovingMemDc.SelectObject(bmMovingScreenBitmap);
+	bmOldMovingScreenBitmap->DeleteObject();
+	bmMovingScreenBitmap.DeleteObject();
+	dcMovingMemDc.DeleteDC();
+	// ---------- ここまで
+	brClipBrush.DeleteObject();
+
+	return TRUE;
+}
+
+// タイムラインカーソルの描画を行う
+BOOL CControlUnitAppProtoView::DrawTimelineCursor(const CDC* dcViewDc, const CRect& rcViewRect, CDC& dcMemDc)
+{
+	if (dcViewDc == nullptr)
+	{
+		return FALSE;
+	}
+
+	//透過用デバイスコンテキスト作成
+	// 仮想デバイスコンテキストを作成
+	CDC dcMovingMemDc;
+	dcMovingMemDc.CreateCompatibleDC(const_cast<CDC*>(dcViewDc));
+	CBitmap bmMovingScreenBitmap;
+	bmMovingScreenBitmap.CreateCompatibleBitmap(const_cast<CDC*>(dcViewDc), rcViewRect.Width(), rcViewRect.Height());
+	CBitmap* bmOldMovingScreenBitmap = dcMovingMemDc.SelectObject(&bmMovingScreenBitmap);
+	// 透過ブレンド用データ
+	BLENDFUNCTION blAlphaBlend;
+	blAlphaBlend.BlendOp = AC_SRC_OVER;
+	blAlphaBlend.BlendFlags = 0;
+	blAlphaBlend.SourceConstantAlpha = kTimelineCursorAlpha;
+	blAlphaBlend.AlphaFormat = 0;
+
+	// 描画座標を計算
+	CRect rcTimelineCursorRect;
+	rcTimelineCursorRect.left = m_iTimelineCursorPoint;
+	rcTimelineCursorRect.right = rcTimelineCursorRect.left + kTimelineCursorThickness - 1;
+	rcTimelineCursorRect.top = m_rcSeekBarRect.top;
+	rcTimelineCursorRect.bottom = m_rcTimelineDataRect.bottom;
+
+	// ラインを描画
+	CBrush brTimelineCursorBrush(TIMELINECURSORCOLOR_BRUSH);
+	dcMovingMemDc.FillRect(rcTimelineCursorRect, &brTimelineCursorBrush);
+	brTimelineCursorBrush.DeleteObject();
+	dcMemDc.AlphaBlend(rcTimelineCursorRect.left, rcTimelineCursorRect.top, rcTimelineCursorRect.Width(), rcTimelineCursorRect.Height(),
+		&dcMovingMemDc, rcTimelineCursorRect.left, rcTimelineCursorRect.top, rcTimelineCursorRect.Width(), rcTimelineCursorRect.Height(),
+		blAlphaBlend);
+
+	//TODO: デバッグ
+	CString strText;
+	strText.Format(_T("CURSOR LINE  %d"), m_iRightFrameNumber + rcTimelineCursorRect.left);
+	dcMemDc.TextOutW(5, 105, strText);
+
+	if (m_fShuttling)
+	{
+		blAlphaBlend.SourceConstantAlpha = kTimelineCursorDragGuideLineAlpha;
+		
+		//TODO: 位置は検討が必要
+		CString strText;
+		int iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
+		COLORREF crOldTextColor = dcMemDc.SetTextColor(SEEKBARTIMECODETEXTCOLOR_BRUSH);
+		strText.Format(_T("×  %d"), m_fSuttleSpeed);
+		dcMemDc.TextOutW(90, m_rcTimelineControlPanelRect.bottom - 20, strText);
+		dcMemDc.SetBkMode(iOldBkMode);
+		dcMemDc.SetTextColor(crOldTextColor);
+
+		//補助線の描画
+		CRect rcShuttleLineRect;
+		DrawShuttleGuideLine(dcMemDc, dcMovingMemDc, blAlphaBlend, rcShuttleLineRect, kTimelineCursorDragOneSpeed);
+		DrawShuttleGuideLine(dcMemDc, dcMovingMemDc, blAlphaBlend, rcShuttleLineRect, kTimelineCursorDragTowSpeed);
+		DrawShuttleGuideLine(dcMemDc, dcMovingMemDc, blAlphaBlend, rcShuttleLineRect, kTimelineCursorDragFourSpeed);
+		DrawShuttleGuideLine(dcMemDc, dcMovingMemDc, blAlphaBlend, rcShuttleLineRect, kTimelineCursorDragEightSpeed);
+		DrawShuttleGuideLine(dcMemDc, dcMovingMemDc, blAlphaBlend, rcShuttleLineRect, kTimelineCursorDragSixteenSpeed);
+		DrawShuttleGuideLine(dcMemDc, dcMovingMemDc, blAlphaBlend, rcShuttleLineRect, kTimelineCursorDragThirtyTwoSpeed);
+		DrawShuttleGuideLine(dcMemDc, dcMovingMemDc, blAlphaBlend, rcShuttleLineRect, kTimelineCursorDragSixtyFourSpeed);
+
+	}
+
+	// 仮想デバイスコンテキストビットマップの初期化・破棄
+	dcMovingMemDc.SelectObject(bmMovingScreenBitmap);
+	bmOldMovingScreenBitmap->DeleteObject();
+	bmMovingScreenBitmap.DeleteObject();
+	dcMovingMemDc.DeleteDC();
+	// ---------- ここまで
+	brTimelineCursorBrush.DeleteObject();
+
+	return TRUE;
+}
+
+// シャトル操作時のガイドラインを表示する
+void CControlUnitAppProtoView::DrawShuttleGuideLine(CDC& dcMemDc, CDC& dcMovingMemDc, BLENDFUNCTION& blAlphaBlend, CRect& rcLineRect, float fGuideAreaWidth)
+{
+	int iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * fGuideAreaWidth));
+
+	rcLineRect.left = m_iTimelineCursorPoint + iGuideAreaWidth - kTimelineCursorDragGuideLineThickness;
+	rcLineRect.right = rcLineRect.left + kTimelineCursorDragGuideLineThickness;
+	rcLineRect.top = m_rcTimelineDataRect.top;
+	rcLineRect.bottom = m_rcTimelineDataRect.bottom;
+
+	// ラインを描画
+	CBrush brShuttleGuidLineBrush(TIMELINECURSORDRAGGUIDELINECOLOR_BRUSH);
+	dcMovingMemDc.FillRect(rcLineRect, &brShuttleGuidLineBrush);
+	dcMemDc.AlphaBlend(rcLineRect.left, rcLineRect.top, rcLineRect.Width(), rcLineRect.Height(),
+		&dcMovingMemDc, rcLineRect.left, rcLineRect.top, rcLineRect.Width(), rcLineRect.Height(),
+		blAlphaBlend);
+
+	rcLineRect.left = m_iTimelineCursorPoint - iGuideAreaWidth;
+	rcLineRect.right = rcLineRect.left + kTimelineCursorDragGuideLineThickness;
+
+	// ラインを描画
+	dcMovingMemDc.FillRect(rcLineRect, &brShuttleGuidLineBrush);
+	brShuttleGuidLineBrush.DeleteObject();
+	dcMemDc.AlphaBlend(rcLineRect.left, rcLineRect.top, rcLineRect.Width(), rcLineRect.Height(),
+		&dcMovingMemDc, rcLineRect.left, rcLineRect.top, rcLineRect.Width(), rcLineRect.Height(),
+		blAlphaBlend);
+}
+
+
 
 BOOL CControlUnitAppProtoView::OnEraseBkgnd(CDC* pDC)
 {
@@ -366,38 +839,124 @@ BOOL CControlUnitAppProtoView::OnEraseBkgnd(CDC* pDC)
 // Viewのサイズから各表示パネルの座標を計算して設定する。
 void CControlUnitAppProtoView::SetPanelRect(void)
 {
-	CRect rcViewRect, rcControlPanelRect, rcPreviewPanelRect, rcTimelineEditPanelRect;
+	CRect rcViewRect;
 	GetClientRect(&rcViewRect);
 
-	rcControlPanelRect.CopyRect(m_rcControlPanelRect);
-	rcPreviewPanelRect.CopyRect(m_rcPreviewPanelRect);
-	rcTimelineEditPanelRect.CopyRect(m_rcTimelineEditPanelRect);
-
 	float fViewHeight = static_cast<float>(rcViewRect.Height());
-	long lViewHeight = static_cast<long>(floor((fViewHeight - static_cast<float>(m_rcControlPanelRect.Height())) / 2));
+	long lViewHeight = static_cast<long>(floor((fViewHeight - static_cast<float>(m_rcSeekBarRect.Height())) / 2));
+
+	// TODO: いずれはメンバ変数に！
+	int iTimelineEditHeaderDefaltHeight = kTimelineEditHeaderDefaltHeight;
+	int iTimelineControlPanelDefaultWidth = kTimelineControlPanelDefaultWidth;
+
 
 	m_rcPreviewPanelRect.left = rcViewRect.left;
 	m_rcPreviewPanelRect.top = rcViewRect.top;
 	m_rcPreviewPanelRect.right = rcViewRect.right;
 	m_rcPreviewPanelRect.bottom = rcViewRect.top + lViewHeight;
 
-	int iControlPanelHeight = rcControlPanelRect.Height();
-	m_rcControlPanelRect.left = rcViewRect.left;
-	m_rcControlPanelRect.top = m_rcPreviewPanelRect.bottom + kSplitterHeight;
-	m_rcControlPanelRect.right = rcViewRect.right;
-	m_rcControlPanelRect.bottom = m_rcControlPanelRect.top + iControlPanelHeight;
-	
-	int iDisplayFrameCount = static_cast<int>(floor(m_rcControlPanelRect.Width() / m_fPointPerFrame));
-	m_iLeftFrameNumber = m_iTimelineCursorFrameNumber - static_cast<int>(floor((iDisplayFrameCount / 2)));
-	m_iRightFrameNumber = m_iTimelineCursorFrameNumber + static_cast<int>(ceil((iDisplayFrameCount / 2)));
-
 	m_rcTimelineEditPanelRect.left = rcViewRect.left;
-	m_rcTimelineEditPanelRect.top = m_rcControlPanelRect.bottom + kSplitterHeight;
+	m_rcTimelineEditPanelRect.top = m_rcPreviewPanelRect.bottom + kSplitterHeight;
 	m_rcTimelineEditPanelRect.right = rcViewRect.right;
 	m_rcTimelineEditPanelRect.bottom = rcViewRect.bottom;
 
+	// タイムラインヘッダーエリアの配置
+	m_rcTimelineEditHeaderRect.CopyRect(m_rcTimelineEditPanelRect);
+	m_rcTimelineEditHeaderRect.bottom = m_rcTimelineEditHeaderRect.top + iTimelineEditHeaderDefaltHeight;
+
+	// タイムラインコントロールエリアの配置
+	m_rcTimelineControlPanelRect.CopyRect(m_rcTimelineEditHeaderRect);
+	m_rcTimelineControlPanelRect.right = m_rcTimelineControlPanelRect.left + iTimelineControlPanelDefaultWidth;
+
+	// シークバーエリアの配置
+	m_rcSeekBarRect.CopyRect(m_rcTimelineEditHeaderRect);
+	m_rcSeekBarRect.left = m_rcTimelineControlPanelRect.right + kSplitterWidth;
+
+	// トラックヘッダの配置
+	m_rcTrackHeaderRect.CopyRect(m_rcTimelineEditPanelRect);
+	m_rcTrackHeaderRect.top = m_rcTimelineEditHeaderRect.bottom + kSplitterHeight;
+	m_rcTrackHeaderRect.right = m_rcTimelineControlPanelRect.right;
+
+	// タイムラインデータエリアの配置
+	m_rcTimelineDataRect.CopyRect(m_rcTimelineEditPanelRect);
+	m_rcTimelineDataRect.left = m_rcSeekBarRect.left;
+	m_rcTimelineDataRect.top = m_rcTrackHeaderRect.top;
+
+	// タイムラインカーソルヒット領域の配置
+	m_rcTimelineCursorHitArea.CopyRect(m_rcTimelineEditPanelRect);
+	m_rcTimelineCursorHitArea.left = m_iTimelineCursorPoint - kTimelineCursorDragArea;
+	m_rcTimelineCursorHitArea.right = m_iTimelineCursorPoint + kTimelineCursorDragArea;
+
+	// 表示可能フレーム範囲の計算
+	int iDisplayFrameCount = static_cast<int>(floor(m_rcSeekBarRect.Width() / m_fPointPerFrame));
+	m_iTimelineCursorPoint = static_cast<int>(floor(m_rcSeekBarRect.Width() / 2)) + m_rcSeekBarRect.left;
+	m_iLeftFrameNumber = m_iTimelineCursorFrameNumber - static_cast<int>(floor((iDisplayFrameCount / 2)));
+	m_iRightFrameNumber = m_iTimelineCursorFrameNumber + static_cast<int>(ceil((iDisplayFrameCount / 2))) + 1;
+
 	return;
 }
+
+// タイムラインデータ表示倍率の変更
+BOOL CControlUnitAppProtoView::ChangeDisplayScale(void)
+{
+	int kDisplayScaleArray[13] = { 1, 2, 3, 6, 10, 30, 60, 300, 600, 1800, 3600, 18000, 36000 };
+	int iArrayCount = sizeof kDisplayScaleArray / sizeof kDisplayScaleArray[0];
+
+	if (m_iSelectedDisplayScaleNumber < 0)
+	{
+		m_iSelectedDisplayScaleNumber = 0;
+		return FALSE;
+	}
+	else if (m_iSelectedDisplayScaleNumber > iArrayCount - 1)
+	{
+		m_iSelectedDisplayScaleNumber = iArrayCount - 1;
+		return FALSE;
+	}
+
+	m_iFramePerBase = kDisplayScaleArray[m_iSelectedDisplayScaleNumber];
+
+	m_fPointPerFrame = static_cast<float>(kSeekBarScaleBaseWidth) / static_cast<float>(m_iFramePerBase);
+
+	if (m_iFramePerBase < kSeekBarScaleMaxCountPerBase)
+	{
+		m_iSeekBarScaleCountPerBase = m_iFramePerBase;
+	}
+	else
+	{
+		m_iSeekBarScaleCountPerBase = kSeekBarScaleMaxCountPerBase;
+	}
+
+	m_iSmallScaleLength = kSeekBarScaleBaseWidth / m_iSeekBarScaleCountPerBase;
+
+	if (m_fPointPerFrame < 1)
+	{
+		m_iPointPerOperation = 1;
+	}
+	else
+	{
+		m_iPointPerOperation = static_cast<int>(floor(m_fPointPerFrame));
+		if ((m_fPointPerFrame - m_iPointPerOperation) != 0)
+		{
+			return FALSE;
+		}
+	}
+
+	m_fFramePerPoint = static_cast<float>(m_iFramePerBase) / static_cast<float>(kSeekBarScaleBaseWidth);
+
+	float fFramePerScale = static_cast<float>(m_iFramePerBase) / static_cast<float>(m_iSeekBarScaleCountPerBase);
+	if ((fFramePerScale - static_cast<int>(floor(fFramePerScale))) == 0)
+	{
+		m_iFramePerScale = m_iFramePerBase / m_iSeekBarScaleCountPerBase;
+	}
+	else
+	{
+		m_iFramePerScale = static_cast<int>(floor(fFramePerScale));
+		return FALSE;
+	}
+	return TRUE;
+}
+
+
 
 
 int CControlUnitAppProtoView::OnCreate(LPCREATESTRUCT lpCreateStruct)
@@ -472,7 +1031,7 @@ BOOL CControlUnitAppProtoView::IsPointInTrimRange(const CPoint& point, const CRe
 	}
 	else
 	{
-		rcTrimRect.right = rcTrimRect.left + static_cast<long>(floor(rcTrimRect.Width() * kClipLengthRate));
+		rcTrimRect.right = rcTrimRect.left + static_cast<long>(floor(rcTrimRect.Width() * kTrimAreaRate));
 		if (rcTrimRect.Width() < kTrimHitCheckMinWidth)
 		{
 			rcTrimRect.right = rcTrimRect.left + kTrimHitCheckMinWidth;
@@ -488,7 +1047,7 @@ BOOL CControlUnitAppProtoView::IsPointInTrimRange(const CPoint& point, const CRe
 	{
 		// Out側判定
 		rcTrimRect.CopyRect(rcClipRect);
-		rcTrimRect.left = rcTrimRect.right - static_cast<long>(floor(rcTrimRect.Width() * kClipLengthRate));
+		rcTrimRect.left = rcTrimRect.right - static_cast<long>(floor(rcTrimRect.Width() * kTrimAreaRate));
 		if (rcTrimRect.Width() < kTrimHitCheckMinWidth)
 		{
 			rcTrimRect.left = rcTrimRect.right - kTrimHitCheckMinWidth;
@@ -523,9 +1082,9 @@ BOOL CControlUnitAppProtoView::CheckInTrim(void)
 	}
 
 	// 範囲チェック
-	if (m_rcMovingRect.left < m_rcTimelineEditPanelRect.left)
+	if (m_rcMovingRect.left < m_rcTimelineDataRect.left)
 	{
-		m_rcMovingRect.left = m_rcTimelineEditPanelRect.left;
+		m_rcMovingRect.left = m_rcTimelineDataRect.left;
 		return FALSE;
 	}
 
@@ -552,9 +1111,9 @@ BOOL CControlUnitAppProtoView::CheckOutTrim(void)
 	}
 
 	// 範囲チェック
-	if (m_rcMovingRect.right > m_rcTimelineEditPanelRect.right)
+	if (m_rcMovingRect.right > m_rcTimelineDataRect.right)
 	{
-		m_rcMovingRect.right = m_rcTimelineEditPanelRect.right;
+		m_rcMovingRect.right = m_rcTimelineDataRect.right;
 		return FALSE;
 	}
 
@@ -565,14 +1124,14 @@ BOOL CControlUnitAppProtoView::CheckOutTrim(void)
 BOOL CControlUnitAppProtoView::CheckMove(CPoint& point)
 {
 	// 範囲チェック
-	if (m_rcMovingRect.left < m_rcTimelineEditPanelRect.left)
+	if (m_clMovingClipData->m_iTimelineInPoint + m_iOperatingClipFrameCount < 0)
 	{
-		m_rcMovingRect.MoveToX(m_rcTimelineEditPanelRect.left);
+		m_iOperatingClipFrameCount = m_clMovingClipData->m_iTimelineInPoint * -1;
 		return FALSE;
 	}
-	if (m_rcMovingRect.right > m_rcTimelineEditPanelRect.right)
+	if (m_rcMovingRect.right > m_rcTimelineDataRect.right)
 	{
-		m_rcMovingRect.MoveToX(m_rcTimelineEditPanelRect.right - m_rcMovingRect.Width());
+		m_rcMovingRect.MoveToX(m_rcTimelineDataRect.right - m_rcMovingRect.Width());
 		return FALSE;
 	}
 
@@ -606,232 +1165,13 @@ BOOL CControlUnitAppProtoView::CheckMove(CPoint& point)
 	return TRUE;
 }
 
-// シークバーの描画を行う
-void CControlUnitAppProtoView::DrawSeekBar(CDC& dcMemDc)
-{
-	// 背景塗りつぶし
-	CBrush brSeekBarBrush(SEEKBARBACKGROUNDCOLOR_BRUSH);
-	dcMemDc.FillRect(m_rcControlPanelRect, &brSeekBarBrush);
-
-	// 目盛り描画
-	CPen brSeekBarBigScalePen(PS_SOLID, kSeekBarBigScaleThikness, SEEKBARSCALECOLOR_BRUSH);
-	CPen brSeekBarMiddelScalePen(PS_SOLID, kSeekBarMiddleScaleThikness, SEEKBARSCALECOLOR_BRUSH);
-	CPen brSeekBarSmallScalePen(PS_SOLID, kSeekBarSmallScaleThikness, SEEKBARSCALECOLOR_BRUSH);
-	CPen* oldpen = dcMemDc.SelectObject(&brSeekBarMiddelScalePen);
-	POINT pScaleLine;
-	pScaleLine.x = m_rcControlPanelRect.left;
-	pScaleLine.y = m_rcControlPanelRect.top;
-	int i = m_iLeftFrameNumber + m_iScrubingFrameCount, j = 0, iOldBkMode, iFramePerSmallScale = m_iFramePerBase / m_iSeekBarSmallScaleCount;
-	CString strFrameNumber;
-	COLORREF crOldColor;
-	while (pScaleLine.x < m_rcControlPanelRect.right)
-	{
-		while ((i % iFramePerSmallScale) != 0)
-		{
-			++i;
-			pScaleLine.x += m_fPointPerFrame;
-		}
-		if (i >= 0)
-		{
-			if ((i % (kSeekBarMainLineInterval * m_iSeekBarSmallScaleCount * iFramePerSmallScale)) == 0)
-			{
-				// TODO: 製品はタイムコードを表示
-				iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
-				crOldColor = dcMemDc.SetTextColor(SEEKBARSCALECOLOR_BRUSH);
-				strFrameNumber.Format(_T("%d"), i);
-				dcMemDc.TextOut(pScaleLine.x + 2, m_rcControlPanelRect.top + 2, strFrameNumber);
-				dcMemDc.SetBkMode(iOldBkMode);
-				dcMemDc.SetTextColor(crOldColor);
-
-				dcMemDc.SelectObject(&brSeekBarBigScalePen);
-				pScaleLine.y = m_rcControlPanelRect.top + kSeekBarBigScaleMargin;
-				dcMemDc.MoveTo(pScaleLine);
-				pScaleLine.y = m_rcTimelineEditPanelRect.bottom;
-				dcMemDc.LineTo(pScaleLine);
-				pScaleLine.x += m_iSmallScaleLength;
-				i += iFramePerSmallScale;
-			}
-			else if ((i % (m_iSeekBarSmallScaleCount * iFramePerSmallScale)) == 0)
-			{
-				// TODO: デバッグ用表示なのでとる事
-				iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
-				crOldColor = dcMemDc.SetTextColor(SEEKBARSCALECOLOR_BRUSH);
-				strFrameNumber.Format(_T("%d"), (i % (kSeekBarMainLineInterval * m_iSeekBarSmallScaleCount)));
-				dcMemDc.TextOut(pScaleLine.x + 2, m_rcControlPanelRect.top + 6, strFrameNumber);
-				dcMemDc.SelectObject(&brSeekBarMiddelScalePen);
-				pScaleLine.y = m_rcControlPanelRect.top + kSeekBarMiddleScaleMargin;
-				dcMemDc.MoveTo(pScaleLine);
-				pScaleLine.y = m_rcControlPanelRect.bottom;
-				dcMemDc.LineTo(pScaleLine);
-				pScaleLine.x += m_iSmallScaleLength;
-				i += iFramePerSmallScale;
-			}
-			else
-			{
-				j = 0;
-				while (j < (m_iSeekBarSmallScaleCount - 1) && ((i % (m_iSeekBarSmallScaleCount * iFramePerSmallScale)) != 0))
-				{
-					dcMemDc.SelectObject(&brSeekBarSmallScalePen);
-					pScaleLine.y = m_rcControlPanelRect.top + kSeekBarSmallScaleMargin;
-					dcMemDc.MoveTo(pScaleLine);
-					pScaleLine.y = m_rcControlPanelRect.bottom;
-					dcMemDc.LineTo(pScaleLine);
-					pScaleLine.x += m_iSmallScaleLength;
-					++j;
-					i += iFramePerSmallScale;
-				}
-			}
-		}
-		else
-		{
-			pScaleLine.x += m_iSmallScaleLength;
-			i += iFramePerSmallScale;
-		}
-	}
-	dcMemDc.SelectObject(oldpen);
-	strFrameNumber.Format(_T("%d"), m_iTimelineCursorFrameNumber);
-	dcMemDc.TextOutW(5, 5, strFrameNumber);
-	strFrameNumber.Format(_T("%d"), m_iLeftFrameNumber);
-	dcMemDc.TextOutW(5, 40, strFrameNumber);
-	strFrameNumber.Format(_T("%d"), m_iRightFrameNumber);
-	dcMemDc.TextOutW(5, 65, strFrameNumber);
-
-	brSeekBarBrush.DeleteObject();
-	brSeekBarBigScalePen.DeleteObject();
-	brSeekBarMiddelScalePen.DeleteObject();
-	brSeekBarSmallScalePen.DeleteObject();
-
-}
-
-
-// 操作中クリップの描画を行う
-BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRect& rcViewRect, CDC& dcMemDc)
-{
-	if (dcViewDc == NULL)
-	{
-		return FALSE;
-	}
-
-	//操作イメージ用デバイスコンテキスト作成
-	// 仮想デバイスコンテキストを作成
-	CDC dcMovingMemDc;
-	dcMovingMemDc.CreateCompatibleDC(const_cast<CDC*>(dcViewDc));
-	CBitmap bmMovingScreenBitmap;
-	bmMovingScreenBitmap.CreateCompatibleBitmap(const_cast<CDC*>(dcViewDc), rcViewRect.Width(), rcViewRect.Height());
-	CBitmap* bmOldMovingScreenBitmap = dcMovingMemDc.SelectObject(&bmMovingScreenBitmap);
-	// 透過ブレンド用データ
-	BLENDFUNCTION blAlphaBlend;
-	blAlphaBlend.BlendOp = AC_SRC_OVER;
-	blAlphaBlend.BlendFlags = 0;
-	blAlphaBlend.SourceConstantAlpha = kMovingClipAlpha;
-	blAlphaBlend.AlphaFormat = 0;
-
-	// 元のクリップの色を変える
-	CBrush brMovingClipBrush(LIGHTGRAYCOLOR_BRUSH);
-	CRect crClipRect;
-	CalcClipRectDisplayPoint(crClipRect, m_clMovingClipData);
-	dcMemDc.FillRect(&crClipRect, &brMovingClipBrush);
-	brMovingClipBrush.DeleteObject();
-
-	CBrush brClipBrush(CLIPCOLOR_BRUSH);
-
-	if (m_fInTriming || m_fOutTriming)
-	{
-		//CBrush brClipTrimBrush(ACCENTCOLOR_BRUSH);
-		dcMovingMemDc.FillRect(&m_rcMovingRect, &brClipBrush);
-		//brClipTrimBrush.DeleteObject();
-		dcMemDc.AlphaBlend(m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
-			&dcMovingMemDc, m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
-			blAlphaBlend);
-	}
-	else
-	{
-		// ドロップ位置用
-		//CBrush brClipMoveBrush(ACCENTCOLOR_BRUSH);
-		dcMovingMemDc.FillRect(&m_rcMovingRect, &brClipBrush);
-		//brClipMoveBrush.DeleteObject();
-		dcMemDc.AlphaBlend(m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
-			&dcMovingMemDc, m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
-			blAlphaBlend);
-
-		// マウス位置追随用
-		if (!(m_rcBorderRect.EqualRect(m_rcMovingRect)))
-		{
-			CBrush brClipOverlapBrush(CAUTIONCOLOR_BRUSH);
-			dcMovingMemDc.FillRect(&m_rcBorderRect, &brClipOverlapBrush);
-			blAlphaBlend.SourceConstantAlpha = kMovingClipCautionAlpha;
-			dcMemDc.AlphaBlend(m_rcBorderRect.left, m_rcBorderRect.top, m_rcBorderRect.Width(), m_rcBorderRect.Height(),
-				&dcMovingMemDc, m_rcBorderRect.left, m_rcBorderRect.top, m_rcBorderRect.Width(), m_rcBorderRect.Height(),
-				blAlphaBlend);
-		}
-	}
-	// 仮想デバイスコンテキストビットマップの初期化・破棄
-	dcMovingMemDc.SelectObject(bmMovingScreenBitmap);
-	bmOldMovingScreenBitmap->DeleteObject();
-	bmMovingScreenBitmap.DeleteObject();
-	dcMovingMemDc.DeleteDC();
-	// ---------- ここまで
-	brClipBrush.DeleteObject();
-
-	return TRUE;
-}
-
-// タイムラインカーソルの描画を行う
-BOOL CControlUnitAppProtoView::DrawTimelineCursor(const CDC* dcViewDc, const CRect& rcViewRect, CDC& dcMemDc)
-{
-	if (dcViewDc == NULL)
-	{
-		return FALSE;
-	}
-
-	//透過用デバイスコンテキスト作成
-	// 仮想デバイスコンテキストを作成
-	CDC dcMovingMemDc;
-	dcMovingMemDc.CreateCompatibleDC(const_cast<CDC*>(dcViewDc));
-	CBitmap bmMovingScreenBitmap;
-	bmMovingScreenBitmap.CreateCompatibleBitmap(const_cast<CDC*>(dcViewDc), rcViewRect.Width(), rcViewRect.Height());
-	CBitmap* bmOldMovingScreenBitmap = dcMovingMemDc.SelectObject(&bmMovingScreenBitmap);
-	// 透過ブレンド用データ
-	BLENDFUNCTION blAlphaBlend;
-	blAlphaBlend.BlendOp = AC_SRC_OVER;
-	blAlphaBlend.BlendFlags = 0;
-	blAlphaBlend.SourceConstantAlpha = kTimelineCursorAlpha;
-	blAlphaBlend.AlphaFormat = 0;
-
-	// 描画座標を計算
-	CRect rcTimelineCursorRect;
-	rcTimelineCursorRect.left = m_rcControlPanelRect.left + (m_iTimelineCursorFrameNumber - m_iLeftFrameNumber) * m_fPointPerFrame;
-	rcTimelineCursorRect.right = rcTimelineCursorRect.left + 1;
-	rcTimelineCursorRect.top = m_rcControlPanelRect.top;
-	rcTimelineCursorRect.bottom = m_rcTimelineEditPanelRect.bottom;
-
-	// ラインを描画
-	CBrush brTimelineCursorBrush(TIMELINECURSORCOLOR_BRUSH);
-	dcMovingMemDc.FillRect(rcTimelineCursorRect, &brTimelineCursorBrush);
-	brTimelineCursorBrush.DeleteObject();
-	dcMemDc.AlphaBlend(rcTimelineCursorRect.left, rcTimelineCursorRect.top, rcTimelineCursorRect.Width(), rcTimelineCursorRect.Height(),
-		&dcMovingMemDc, rcTimelineCursorRect.left, rcTimelineCursorRect.top, rcTimelineCursorRect.Width(), rcTimelineCursorRect.Height(),
-		blAlphaBlend);
-
-	// 仮想デバイスコンテキストビットマップの初期化・破棄
-	dcMovingMemDc.SelectObject(bmMovingScreenBitmap);
-	bmOldMovingScreenBitmap->DeleteObject();
-	bmMovingScreenBitmap.DeleteObject();
-	dcMovingMemDc.DeleteDC();
-	// ---------- ここまで
-	brTimelineCursorBrush.DeleteObject();
-
-	return TRUE;
-}
-
 // クリック位置がシークバー内かを判定する
 BOOL CControlUnitAppProtoView::IsPointInSeekBar(const CPoint& point)
 {
-	if (!(m_rcControlPanelRect.PtInRect(point)))
+	if (!(m_rcSeekBarRect.PtInRect(point)))
 	{
 		return FALSE;
 	}
-	m_fScrubing = TRUE;
 	return TRUE;
 }
 
@@ -839,10 +1179,10 @@ BOOL CControlUnitAppProtoView::IsPointInSeekBar(const CPoint& point)
 BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& crClipRect, ClipDataTest* clClipData, int iMoveFrame /* = 0 */) 
 {
 	int iClipDuration = clClipData->GetDuration();
-	crClipRect.top = m_rcTimelineEditPanelRect.top;
+	crClipRect.top = m_rcTimelineDataRect.top;
 	crClipRect.bottom = crClipRect.top + kTrackDefaultHeight;
-	int iLeftScrubingFrameCount = m_iLeftFrameNumber + m_iScrubingFrameCount;
-	int iRightScrubingFrameCount = m_iRightFrameNumber + m_iScrubingFrameCount;
+	int iLeftScrubingFrameCount = m_iLeftFrameNumber + m_iOperatingFrameCount;
+	int iRightScrubingFrameCount = m_iRightFrameNumber + m_iOperatingFrameCount;
 
 	if (clClipData->m_iTimelineInPoint + iMoveFrame > iRightScrubingFrameCount)
 	{
@@ -854,7 +1194,7 @@ BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& crClipRect, ClipD
 		crClipRect.SetRectEmpty();
 		return FALSE;
 	}
-	int iDisplayInPoint = clClipData->m_iTimelineInPoint + iMoveFrame - iLeftScrubingFrameCount;
+	int iDisplayInPoint = clClipData->m_iTimelineInPoint + iMoveFrame;
 	int iDisplayOutPoint = clClipData->m_iTimelineInPoint + iMoveFrame + iClipDuration;
 	if (iDisplayInPoint < 0)
 	{
@@ -862,14 +1202,107 @@ BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& crClipRect, ClipD
 	}
 	if (iDisplayOutPoint > iRightScrubingFrameCount)
 	{
-		iDisplayOutPoint = iRightScrubingFrameCount;
-	}
-	iDisplayOutPoint -= iLeftScrubingFrameCount;
-	crClipRect.left = iDisplayInPoint * m_fPointPerFrame;
-	crClipRect.right = iDisplayOutPoint * m_fPointPerFrame;
-	if (crClipRect.right > m_rcTimelineEditPanelRect.right)
-	{
-		crClipRect.right = m_rcTimelineEditPanelRect.right;
+		// はみ出し部分まで描画できるように1フレーム加算しておく
+		iDisplayOutPoint = iRightScrubingFrameCount + 1;
 	}
 
+	crClipRect.left = CalcPointByTimelineFrameNumber(iDisplayInPoint);
+	crClipRect.right = CalcPointByTimelineFrameNumber(iDisplayOutPoint);
+	if (crClipRect.right > m_rcTimelineDataRect.right)
+	{
+		crClipRect.right = m_rcTimelineDataRect.right;
+	}
+
+}
+
+// フレーム位置から画面上の座標を計算する
+int CControlUnitAppProtoView::CalcPointByTimelineFrameNumber(const int iFrame)
+{
+	int iXPoint;
+	int iFrameCountFromTimelineCursor = iFrame - m_iTimelineCursorFrameNumber - m_iOperatingFrameCount;
+
+	// １ポイントあたりのフレーム数が１未満の場合（１フレームが複数ポイントに跨る）
+	if (m_fFramePerPoint < 1)
+	{
+		// タイムラインカーソルからの相対座標を求める
+		iXPoint = iFrameCountFromTimelineCursor * m_fPointPerFrame;
+	}
+	else
+	{
+		// タイムラインカーソルからの相対座標を求める
+		iXPoint = static_cast<int>(ceil(iFrameCountFromTimelineCursor / m_fFramePerPoint));
+	}
+	return (iXPoint + m_iTimelineCursorPoint);
+}
+
+// シャトル操作中の速度判定
+float CControlUnitAppProtoView::SetShuttleSpeed(const CPoint& point, CSize& szMoveSize)
+{
+	if (point.x > (m_iTimelineCursorPoint + kTimelineCursorDragArea))
+	{
+		return SetShuttleSpeedByMoveLength(szMoveSize.cx);
+	}
+	else if (point.x < (m_iTimelineCursorPoint - kTimelineCursorDragArea))
+	{
+		int iMoveLength = szMoveSize.cx * -1;
+		return SetShuttleSpeedByMoveLength(iMoveLength) * -1;
+	}
+	return 0.0;
+}
+
+// シャトル操作中の速度判定（マウス移動距離から倍率を返却）
+float CControlUnitAppProtoView::SetShuttleSpeedByMoveLength(int iMoveLength)
+{
+	// TODO: そもそも無段階にすべきか？
+	// TODO: 配列なりに変更して効率よく処理したい！
+	int iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragOneSpeed));
+	if (iMoveLength <= iGuideAreaWidth)
+	{
+		return 1.0;
+	}
+	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragTowSpeed));
+	if (iMoveLength <= iGuideAreaWidth)
+	{
+		return 2.0;
+	}
+	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragFourSpeed));
+	if (iMoveLength <= iGuideAreaWidth)
+	{
+		return 4.0;
+	}
+	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragEightSpeed));
+	if (iMoveLength <= iGuideAreaWidth)
+	{
+		return 8.0;
+	}
+	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragSixteenSpeed));
+	if (iMoveLength <= iGuideAreaWidth)
+	{
+		return 16.0;
+	}
+	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragThirtyTwoSpeed));
+	if (iMoveLength <= iGuideAreaWidth)
+	{
+		return 32.0;
+	}
+	return 64.0;
+}
+
+
+
+// 左ダブルクリック
+void CControlUnitAppProtoView::OnLButtonDblClk(UINT nFlags, CPoint point)
+{
+	// TODO: ここにメッセージ ハンドラー コードを追加するか、既定の処理を呼び出します。
+
+
+	CView::OnLButtonDblClk(nFlags, point);
+}
+
+// 右ダブルクリック
+void CControlUnitAppProtoView::OnRButtonDblClk(UINT nFlags, CPoint point)
+{
+	// TODO: ここにメッセージ ハンドラー コードを追加するか、既定の処理を呼び出します。
+
+	CView::OnRButtonDblClk(nFlags, point);
 }
