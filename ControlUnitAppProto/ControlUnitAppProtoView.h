@@ -131,7 +131,7 @@ private:
 	CRect m_rcTimelineDataRect;
 	CRect m_rcTimelineCursorHitArea;
 
-	int m_iTimelineCursorFrameNumber;	// タイムラインカーソル位置のフレーム番号
+	int m_iTimelineCursorFramePosition;	// タイムラインカーソル位置のフレーム番号
 	int m_iLeftFrameNumber;				// タイムラインデータ表示範囲の先頭フレーム
 	int m_iRightFrameNumber;			// タイムラインデータ表示範囲の最終フレーム
 	int m_iOperatingFrameCount;			// 操作中の移動フレーム数
@@ -148,9 +148,11 @@ private:
 	int m_iTimelineCursorPoint;			// タイムラインカーソルの描画位置
 
 	void SetPanelRect(void);
-	BOOL CalcClipRectDisplayPoint(CRect& crClipRect, ClipDataTest* clClipData, int iMoveFrame = 0);
+	BOOL CalcClipRectDisplayPoint(CRect& crClipRect, ClipDataTest* clClipData, int iMoveFrame = 0, int iIntrimFrames = 0, int iOuttrimFrames = 0);
 	BOOL ChangeDisplayScale(void);
-	int CalcPointByTimelineFrameNumber(const int iFrame);
+	int ChangeTimelineFramePositionToDisplayPoint(const int iFrame);
+	int ChangeDisplayPointToTimelineFramePosition(const CPoint& point);
+	int ChangeOperatingDistanceToTimelineFrames(const CSize& szMoveSize, const int iStratFrame = 0);
 
 	// 仮想クリップ
 	ClipDataTest* m_clClipData1;
@@ -192,7 +194,7 @@ private:
 	BOOL DrawOperatingClip(const CDC* dcViewDc, const CRect& rcViewRect, CDC& dcMemDc);
 	BOOL DrawTimelineCursor(const CDC* dcViewDc, const CRect& rcViewRect, CDC& dcMemDc);
 	void DrawShuttleGuideLine(CDC& dcMemDc, CDC& dcMovingMemDc, BLENDFUNCTION& blAlphaBlend, CRect& rcShuttleLineRect, float fGuideAreaWidth);
-
+	void DrawAnimation(const int iFrame);
 
 public:
 	afx_msg void OnLButtonDown(UINT nFlags, CPoint point);

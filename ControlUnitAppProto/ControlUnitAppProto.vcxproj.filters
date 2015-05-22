@@ -77,12 +77,6 @@
     <ClCompile Include="ControlUnitAppProtoView.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\MFCApplication3\MFCApplication3\TrackDataInfo.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\MFCApplication3\MFCApplication3\TrackDataManager.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
     <ClCompile Include="ClipDataTest.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>

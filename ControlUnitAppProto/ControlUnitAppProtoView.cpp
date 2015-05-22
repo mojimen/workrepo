@@ -67,7 +67,7 @@ CControlUnitAppProtoView::CControlUnitAppProtoView()
 
 	m_iLeftFrameNumber = 0;
 	m_iRightFrameNumber = 0;
-	m_iTimelineCursorFrameNumber = 0;
+	m_iTimelineCursorFramePosition = 0;
 	m_iOperatingFrameCount = 0;
 	m_iOperatingClipFrameCount = 0;
 
@@ -179,6 +179,20 @@ void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 			SetCapture(); // マウスをキャプチャー( OnLButtonUp()で解放)
 			m_poMousePointerLocation = point;	// 移動量計算のため、初期座標を保存
 			m_iOperatingFrameCount = 0;
+
+			//TODO: デバッグ用なので後で削除
+#ifdef PROTOTYPEMODE
+			int iFrame = ChangeDisplayPointToTimelineFramePosition(point);
+			CDC* pDC = GetDC();
+			CRect rcViewRect;
+			GetClientRect(&rcViewRect);
+			CString strFrameNumber;
+			strFrameNumber.Format(_T("SEEKBAR CLICK FRAME %d"), iFrame);
+			pDC->TextOutW(300, 5, strFrameNumber);
+			strFrameNumber.Format(_T("SEEKBAR CLICK POINT %d"), point.x);
+			pDC->TextOutW(300, 40, strFrameNumber);
+			pDC->DeleteDC();
+#endif
 		}
 		// タイムラインコントロールパネル内判定
 		else if (m_rcTimelineControlPanelRect.PtInRect(point))
@@ -201,7 +215,6 @@ void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 			Invalidate();
 		}
 	}
-
 	CView::OnLButtonDown(nFlags, point);
 }
 
@@ -219,21 +232,30 @@ void CControlUnitAppProtoView::OnLButtonUp(UINT nFlags, CPoint point)
 	} 
 	else if (m_fInTriming)
 	{
-		m_rcClipRect.left = m_rcClipRect.left + (m_rcMovingRect.left - m_rcClipDisplayRect.left);
-		m_clMovingClipData->SetCurrentRect(m_rcClipRect);
-		m_rcClipDisplayRect.left = m_rcMovingRect.left;
-		m_clMovingClipData->SetDisplayRect(m_rcClipDisplayRect);
+		m_clMovingClipData->m_iTimelineInPoint += m_iOperatingClipFrameCount;
+		int iClipDuration = m_clMovingClipData->GetDuration();
+		// In側に伸びる（マイナス方向への移動）は長さを加算
+		m_clMovingClipData->SetDuration(iClipDuration - m_iOperatingClipFrameCount);
+
 	}
 	else if (m_fOutTriming)
 	{
-		m_rcClipRect.right = m_rcClipRect.right + (m_rcMovingRect.right - m_rcClipDisplayRect.right);
-		m_clMovingClipData->SetCurrentRect(m_rcClipRect);
-		m_rcClipDisplayRect.right = m_rcMovingRect.right;
-		m_clMovingClipData->SetDisplayRect(m_rcClipDisplayRect);
+		int iClipDuration = m_clMovingClipData->GetDuration();
+		m_clMovingClipData->SetDuration(iClipDuration + m_iOperatingClipFrameCount);
 	}
 	else if (m_fScrubing)
 	{
-		m_iTimelineCursorFrameNumber += m_iOperatingFrameCount;
+		if ((point.x == m_poMousePointerLocation.x) && (point.y == m_poMousePointerLocation.y))
+		{
+			int iFrame = ChangeDisplayPointToTimelineFramePosition(point);
+			// できれば実現
+			//DrawAnimation(iFrame - m_iTimelineCursorFramePosition);
+			m_iTimelineCursorFramePosition = iFrame;
+		}
+		else
+		{
+			m_iTimelineCursorFramePosition += m_iOperatingFrameCount;
+		}
 	}
 
 	m_rcClipRect.SetRectEmpty();
@@ -265,23 +287,7 @@ void CControlUnitAppProtoView::OnMouseMove(UINT nFlags, CPoint point)
 		CSize szMoveSize(point - m_poMousePointerLocation);
 		if (m_fMoving)
 		{
-			// １ポイントあたりのフレーム数が１未満の場合（１フレームが複数ポイントに跨る）
-			if (m_fFramePerPoint < 1)
-			{
-				// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（必要な幅を動かさないとフレームは動かない）
-				m_iOperatingClipFrameCount = static_cast<int>(floor(szMoveSize.cx * m_fFramePerPoint));
-			}
-			else
-			{
-				// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（１ポイントで複数フレーム動く）
-				m_iOperatingClipFrameCount = szMoveSize.cx * m_fFramePerPoint;
-				// 倍率変更により表示に切りの良いフレーム位置でない場合は調整する
-				int iSurPlus = (m_clMovingClipData->m_iTimelineInPoint + m_iOperatingClipFrameCount) % static_cast<int>(m_fFramePerPoint);
-				if (iSurPlus != 0)
-				{
-					m_iOperatingClipFrameCount -= iSurPlus;
-				}
-			}
+			m_iOperatingClipFrameCount = ChangeOperatingDistanceToTimelineFrames(szMoveSize, m_clMovingClipData->m_iTimelineInPoint);
 			CheckMove(point);
 
 			m_rcMovingRect.CopyRect(m_rcClipDisplayRect); //  ドロップ位置のイメージ座標
@@ -296,40 +302,31 @@ void CControlUnitAppProtoView::OnMouseMove(UINT nFlags, CPoint point)
 			m_rcMovingRect.CopyRect(m_rcClipDisplayRect); // 伸縮分のイメージ座標
 			if (m_fInTriming)
 			{
-				m_rcMovingRect.left += szMoveSize.cx;
+				m_iOperatingClipFrameCount = ChangeOperatingDistanceToTimelineFrames(szMoveSize, m_clMovingClipData->m_iTimelineInPoint);
+				//m_rcMovingRect.left += szMoveSize.cx;
 				CheckInTrim();
+				m_rcMovingRect.CopyRect(m_rcClipDisplayRect);
+				CalcClipRectDisplayPoint(m_rcMovingRect, m_clMovingClipData, 0, m_iOperatingClipFrameCount);
 			}
 			else
 			{
-				m_rcMovingRect.right += szMoveSize.cx;
+				m_iOperatingClipFrameCount = ChangeOperatingDistanceToTimelineFrames(szMoveSize, (m_clMovingClipData->m_iTimelineInPoint + m_clMovingClipData->GetDuration()));
+				//m_rcMovingRect.right += szMoveSize.cx;
 				CheckOutTrim();
+				m_rcMovingRect.CopyRect(m_rcClipDisplayRect);
+				CalcClipRectDisplayPoint(m_rcMovingRect, m_clMovingClipData, 0, 0, m_iOperatingClipFrameCount);
 			}
 			Invalidate();
 		}
 		else if (m_fScrubing)
 		{
-			// １ポイントあたりのフレーム数が１未満の場合（１フレームが複数ポイントに跨る）
-			if (m_fFramePerPoint < 1)
-			{
-				// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（必要な幅を動かさないとフレームは動かない）
-				m_iOperatingFrameCount = static_cast<int>(floor(szMoveSize.cx * m_fFramePerPoint));
-			}
-			else
-			{
-				// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（１ポイントで複数フレーム動く）
-				m_iOperatingFrameCount = szMoveSize.cx * m_fFramePerPoint;
-				// 倍率変更により表示に切りの良いフレーム位置でない場合は調整する
-				int iSurPlus = (m_iTimelineCursorFrameNumber + m_iOperatingFrameCount) % static_cast<int>(m_fFramePerPoint);
-				if (iSurPlus != 0)
-				{
-					m_iOperatingFrameCount -= iSurPlus;
-				}
-			}
+			szMoveSize.cx *= -1;
+			m_iOperatingFrameCount = ChangeOperatingDistanceToTimelineFrames(szMoveSize, m_iTimelineCursorFramePosition);
 			// 最小範囲チェック
 			// TODO: 最大範囲チェックは？
-			if ((m_iTimelineCursorFrameNumber + m_iOperatingFrameCount) < 0)
+			if ((m_iTimelineCursorFramePosition + m_iOperatingFrameCount) < 0)
 			{
-				m_iOperatingFrameCount = -1 * m_iTimelineCursorFrameNumber;
+				m_iOperatingFrameCount = -1 * m_iTimelineCursorFramePosition;
 			}
 			Invalidate();
 		}
@@ -456,12 +453,12 @@ void CControlUnitAppProtoView::DrawSeekBar(CDC& dcMemDc)
 	POINT pScaleLine;
 	pScaleLine.x = m_iTimelineCursorPoint;
 	pScaleLine.y = m_rcSeekBarRect.top;
-	int iDrawFrame = m_iTimelineCursorFrameNumber + m_iOperatingFrameCount;
+	int iDrawFrame = m_iTimelineCursorFramePosition + m_iOperatingFrameCount;
 
 	// カーソルから右側の目盛り描画
 	while (pScaleLine.x < m_rcSeekBarRect.right)
 	{
-		if (iDrawFrame == m_iTimelineCursorFrameNumber)
+		if (iDrawFrame == m_iTimelineCursorFramePosition)
 		{
 			//TODO: デバッグ
 			CString strText;
@@ -508,7 +505,7 @@ void CControlUnitAppProtoView::DrawSeekBar(CDC& dcMemDc)
 	// カーソルから左側の目盛り描画
 	pScaleLine.x = m_iTimelineCursorPoint;
 	pScaleLine.y = m_rcSeekBarRect.top;
-	iDrawFrame = m_iTimelineCursorFrameNumber + m_iOperatingFrameCount;
+	iDrawFrame = m_iTimelineCursorFramePosition + m_iOperatingFrameCount;
 	while ((pScaleLine.x > m_rcSeekBarRect.left) && (iDrawFrame >= 0))
 	{
 		// 大目盛り
@@ -543,7 +540,7 @@ void CControlUnitAppProtoView::DrawSeekBar(CDC& dcMemDc)
 
 #ifdef PROTOTYPEMODE
 	CString strFrameNumber;
-	strFrameNumber.Format(_T("%d"), m_iTimelineCursorFrameNumber + m_iOperatingFrameCount);
+	strFrameNumber.Format(_T("%d"), m_iTimelineCursorFramePosition + m_iOperatingFrameCount);
 	dcMemDc.TextOutW(5, 5, strFrameNumber);
 	strFrameNumber.Format(_T("%d"), m_iLeftFrameNumber + m_iOperatingFrameCount);
 	dcMemDc.TextOutW(5, 40, strFrameNumber);
@@ -828,6 +825,25 @@ void CControlUnitAppProtoView::DrawShuttleGuideLine(CDC& dcMemDc, CDC& dcMovingM
 }
 
 
+void CControlUnitAppProtoView::DrawAnimation(const int iFrame)
+{
+	if (m_iTimelineCursorFramePosition > iFrame)
+	{
+		for (m_iTimelineCursorFramePosition; m_iTimelineCursorFramePosition >= iFrame; --m_iTimelineCursorFramePosition)
+		{
+			Invalidate();;
+		}
+	}
+	else
+	{
+		for (m_iTimelineCursorFramePosition; m_iTimelineCursorFramePosition <= iFrame; ++m_iTimelineCursorFramePosition)
+		{
+			Invalidate();
+			Sleep(100);
+		}
+	}
+}
+
 
 BOOL CControlUnitAppProtoView::OnEraseBkgnd(CDC* pDC)
 {
@@ -890,8 +906,8 @@ void CControlUnitAppProtoView::SetPanelRect(void)
 	// 表示可能フレーム範囲の計算
 	int iDisplayFrameCount = static_cast<int>(floor(m_rcSeekBarRect.Width() / m_fPointPerFrame));
 	m_iTimelineCursorPoint = static_cast<int>(floor(m_rcSeekBarRect.Width() / 2)) + m_rcSeekBarRect.left;
-	m_iLeftFrameNumber = m_iTimelineCursorFrameNumber - static_cast<int>(floor((iDisplayFrameCount / 2)));
-	m_iRightFrameNumber = m_iTimelineCursorFrameNumber + static_cast<int>(ceil((iDisplayFrameCount / 2))) + 1;
+	m_iLeftFrameNumber = m_iTimelineCursorFramePosition - static_cast<int>(floor((iDisplayFrameCount / 2)));
+	m_iRightFrameNumber = m_iTimelineCursorFramePosition + static_cast<int>(ceil((iDisplayFrameCount / 2))) + 1;
 
 	return;
 }
@@ -1176,7 +1192,8 @@ BOOL CControlUnitAppProtoView::IsPointInSeekBar(const CPoint& point)
 }
 
 // クリップ位置計算
-BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& crClipRect, ClipDataTest* clClipData, int iMoveFrame /* = 0 */) 
+BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& crClipRect, ClipDataTest* clClipData, int iMoveFrames /* = 0 */, 
+	int iIntrimFrames /* = 0 */, int iOuttrimFrames/* = 0 */)
 {
 	int iClipDuration = clClipData->GetDuration();
 	crClipRect.top = m_rcTimelineDataRect.top;
@@ -1184,18 +1201,18 @@ BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& crClipRect, ClipD
 	int iLeftScrubingFrameCount = m_iLeftFrameNumber + m_iOperatingFrameCount;
 	int iRightScrubingFrameCount = m_iRightFrameNumber + m_iOperatingFrameCount;
 
-	if (clClipData->m_iTimelineInPoint + iMoveFrame > iRightScrubingFrameCount)
+	if (clClipData->m_iTimelineInPoint + iMoveFrames + iIntrimFrames > iRightScrubingFrameCount)
 	{
 		crClipRect.SetRectEmpty();
 		return FALSE;
 	}
-	if ((clClipData->m_iTimelineInPoint + iMoveFrame + iClipDuration) < iLeftScrubingFrameCount)
+	if ((clClipData->m_iTimelineInPoint + iClipDuration + iMoveFrames + iOuttrimFrames) < iLeftScrubingFrameCount)
 	{
 		crClipRect.SetRectEmpty();
 		return FALSE;
 	}
-	int iDisplayInPoint = clClipData->m_iTimelineInPoint + iMoveFrame;
-	int iDisplayOutPoint = clClipData->m_iTimelineInPoint + iMoveFrame + iClipDuration;
+	int iDisplayInPoint = clClipData->m_iTimelineInPoint + iMoveFrames + iIntrimFrames;
+	int iDisplayOutPoint = clClipData->m_iTimelineInPoint + iClipDuration + iMoveFrames + iOuttrimFrames;
 	if (iDisplayInPoint < 0)
 	{
 		iDisplayInPoint = 0;
@@ -1206,8 +1223,8 @@ BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& crClipRect, ClipD
 		iDisplayOutPoint = iRightScrubingFrameCount + 1;
 	}
 
-	crClipRect.left = CalcPointByTimelineFrameNumber(iDisplayInPoint);
-	crClipRect.right = CalcPointByTimelineFrameNumber(iDisplayOutPoint);
+	crClipRect.left = ChangeTimelineFramePositionToDisplayPoint(iDisplayInPoint);
+	crClipRect.right = ChangeTimelineFramePositionToDisplayPoint(iDisplayOutPoint);
 	if (crClipRect.right > m_rcTimelineDataRect.right)
 	{
 		crClipRect.right = m_rcTimelineDataRect.right;
@@ -1215,11 +1232,11 @@ BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& crClipRect, ClipD
 
 }
 
-// フレーム位置から画面上の座標を計算する
-int CControlUnitAppProtoView::CalcPointByTimelineFrameNumber(const int iFrame)
+// フレーム位置を画面上の座標に変換する
+int CControlUnitAppProtoView::ChangeTimelineFramePositionToDisplayPoint(const int iFrame)
 {
 	int iXPoint;
-	int iFrameCountFromTimelineCursor = iFrame - m_iTimelineCursorFrameNumber - m_iOperatingFrameCount;
+	int iFrameCountFromTimelineCursor = iFrame - m_iTimelineCursorFramePosition - m_iOperatingFrameCount;
 
 	// １ポイントあたりのフレーム数が１未満の場合（１フレームが複数ポイントに跨る）
 	if (m_fFramePerPoint < 1)
@@ -1234,6 +1251,59 @@ int CControlUnitAppProtoView::CalcPointByTimelineFrameNumber(const int iFrame)
 	}
 	return (iXPoint + m_iTimelineCursorPoint);
 }
+
+// クリック位置をフレーム位置に変換する
+int CControlUnitAppProtoView::ChangeDisplayPointToTimelineFramePosition(const CPoint& point)
+{
+	int iFrame;
+	int iHorizontalLengthFromTimelineCursor = point.x - m_iTimelineCursorPoint;
+
+	// １フレームあたりのポイント数が１未満の場合
+	if (m_fPointPerFrame < 1)
+	{
+		// タイムラインカーソルからのフレーム数を求める
+		iFrame = iHorizontalLengthFromTimelineCursor * m_fFramePerPoint + m_iTimelineCursorFramePosition;
+	}
+	else
+	{
+		// タイムラインカーソルからの相対座標を求める
+		iFrame = static_cast<int>(ceil(iHorizontalLengthFromTimelineCursor / m_fPointPerFrame)) + m_iTimelineCursorFramePosition;
+	}
+	if (iFrame < 0)
+	{
+		return 0;
+	}
+	else
+	{
+		return iFrame;
+	}
+}
+
+// 操作量を操作フレーム数に変換する
+int CControlUnitAppProtoView::ChangeOperatingDistanceToTimelineFrames(const CSize& szMoveSize, const int iStratFrame /* = 0 */)
+{
+
+	int iFrames;
+	// １ポイントあたりのフレーム数が１未満の場合（１フレームが複数ポイントに跨る）
+	if (m_fFramePerPoint < 1)
+	{
+		// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（必要な幅を動かさないとフレームは動かない）
+		iFrames = static_cast<int>(floor(szMoveSize.cx * m_fFramePerPoint));
+	}
+	else
+	{
+		// 移動フレーム数は実際の移動長×１ポイントあたりのフレーム数（１ポイントで複数フレーム動く）
+		iFrames = szMoveSize.cx * m_fFramePerPoint;
+		// 倍率変更により表示に切りの良いフレーム位置でない場合は調整する
+		int iSurPlus = (iStratFrame + iFrames) % static_cast<int>(m_fFramePerPoint);
+		if (iSurPlus != 0)
+		{
+			iFrames -= iSurPlus;
+		}
+	}
+	return iFrames;
+}
+
 
 // シャトル操作中の速度判定
 float CControlUnitAppProtoView::SetShuttleSpeed(const CPoint& point, CSize& szMoveSize)
