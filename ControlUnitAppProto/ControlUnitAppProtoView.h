@@ -59,7 +59,7 @@ protected:
 	// 固有カラー
 #define CLIPCOLOR_BRUSH ACCENTCOLOR_BRUSH
 #define CLIPOVERLAPPINGCOLOR_BRUSH CAUTIONCOLOR_BRUSH
-#define BASECOLOR_BRUSH WHITECOLOR_BRUSH
+#define TIMELINEBASECOLOR_BRUSH WHITECOLOR_BRUSH
 
 #define TIMELINECONTROLPANELBACKGROUNDCOLOR_BRUSH ACCENTCOLOR_BRUSH2
 #define SEEKBARBACKGROUNDCOLOR_BRUSH ACCENTCOLOR_BRUSH2
@@ -79,6 +79,7 @@ private:
 	const int kSplitterHeight = 5;					// スプリッタの幅
 	const int kMovingClipAlpha = 128;				// 移動中クリップのアルファ値
 	const int kMovingClipOverlappingAlpha = 32;		// 移動中クリップのアルファ値（配置不能時）
+	const double kSlideTrimAreaRate = 0.1;			// スライドトリムエリアとして使用する比率
 	const double kTrimAreaRate = 0.2;				// トリムエリアとして使用する比率
 	const int kClipHitCheckMinWidth = 10;			// クリップ当たり判定の最小保証幅（これよりクリップが短い場合に使用する幅）
 	const int kTrimHitCheckMinWidth = 5;			// トリムチェックで使用する最小幅（これよりトリムチェック範囲が短い場合に使用する幅）
@@ -148,7 +149,10 @@ private:
 	int m_iTimelineCursorPoint;			// タイムラインカーソルの描画位置
 
 	void SetPanelRect(void);
-	BOOL CalcClipRectDisplayPoint(CRect& crClipRect, ClipDataTest* clClipData, int iMoveFrame = 0, int iIntrimFrames = 0, int iOuttrimFrames = 0);
+	BOOL CalcClipRectDisplayPoint(CRect& rcClipRect, const ClipDataTest* clClipData, const int& iMoveFrame = 0, 
+		const int& iIntrimFrames = 0, const int& iOuttrimFrames = 0);
+	BOOL CalcClipRect(CRect& rcClipRect, const int& iInPoint, const int& iDuration, const int& iMoveFrame = 0, 
+		const int& iIntrimFrames = 0, const int& iOuttrimFrames = 0);
 	BOOL ChangeDisplayScale(void);
 	int ChangeTimelineFramePositionToDisplayPoint(const int iFrame);
 	int ChangeDisplayPointToTimelineFramePosition(const CPoint& point);
@@ -169,10 +173,10 @@ private:
 	CPoint m_poMousePointerLocation; // マウスボタンが押されたときの位置
 	BOOL m_fLButtonClicking;	// マウスボタンが押されているかどうかを記録
 	BOOL m_fMoving;				// Move操作中
-	BOOL m_fInTriming;			// In側SingleTrim操作中
-	BOOL m_fOutTriming;			// Out側SingleTrim操作中
+	BOOL m_fSingleInTriming;	// In側SingleTrim操作中
+	BOOL m_fSingleOutTriming;	// Out側SingleTrim操作中
 	BOOL m_fScrubing;			// Scrub操作中
-	BOOL m_fShuttling;			// Shuttle操作中
+	BOOL m_fDragShuttling;		// DragShuttle操作中
 
 	BOOL IsPointInAnyClipRect(const CPoint& point);
 	BOOL IsPointInClipRect(const CPoint& point, const CRect& rcClipRect, CRect& rcHitTestRect);
