@@ -26,6 +26,7 @@ BEGIN_MESSAGE_MAP(CMainFrame, CMDIFrameWndEx)
 	ON_REGISTERED_MESSAGE(AFX_WM_CREATETOOLBAR, &CMainFrame::OnToolbarCreateNew)
 	ON_COMMAND_RANGE(ID_VIEW_APPLOOK_WIN_2000, ID_VIEW_APPLOOK_WINDOWS_7, &CMainFrame::OnApplicationLook)
 	ON_UPDATE_COMMAND_UI_RANGE(ID_VIEW_APPLOOK_WIN_2000, ID_VIEW_APPLOOK_WINDOWS_7, &CMainFrame::OnUpdateApplicationLook)
+	//ON_WM_NCPAINT()
 END_MESSAGE_MAP()
 
 static UINT indicators[] =
@@ -317,3 +318,35 @@ BOOL CMainFrame::LoadFrame(UINT nIDResource, DWORD dwDefaultStyle, CWnd* pParent
 	return TRUE;
 }
 
+
+
+//void CMainFrame::OnNcPaint()
+//{
+//	// TODO: ここにメッセージ ハンドラー コードを追加します。
+//	// 描画メッセージで CMDIFrameWndEx::OnNcPaint() を呼び出さないでください。
+//
+//	int cyCaption = 2;//GetSystemMetrics(SM_CYCAPTION);//タイトルバーの高さを取得
+//	int cxFrame = GetSystemMetrics(SM_CXFRAME);//　フレームの幅
+//	int cyFrame = GetSystemMetrics(SM_CYFRAME);//　フレームの高さ
+//	COLORREF crCaption = RGB(250, 250, 0);//　塗りつぶす色
+//	COLORREF crBaseCaption = RGB(102, 102, 255);//　塗りつぶす色
+//
+//	CRect rcWnd;
+//	GetWindowRect(rcWnd);
+//
+//	CDC* pDC = GetWindowDC();
+//	pDC->FillSolidRect(rcWnd, crBaseCaption);
+//	pDC->FillSolidRect(0, 0, rcWnd.Width(), cyCaption, crCaption);//フレーム上部
+//	pDC->FillSolidRect(0, cyFrame, cyCaption, rcWnd.Height(), crCaption);//左
+//	pDC->FillSolidRect(rcWnd.Width() - cxFrame, cyFrame - cxFrame, cyCaption, rcWnd.Height(), crCaption);//右
+//	pDC->FillSolidRect(0, rcWnd.Height() - 4, rcWnd.Width(), cyCaption, crCaption);//フレーム下部
+//
+//	ReleaseDC(pDC);	//CWindowDC dc(this);
+//
+//	//CRect rect;
+//	//GetWindowRect(rect);
+//	//rect.OffsetRect(-rect.TopLeft());
+//
+//	//// 外枠を赤で囲む
+//	//dc.FrameRect(rect, &CBrush(RGB(255, 0, 0)));
+//}

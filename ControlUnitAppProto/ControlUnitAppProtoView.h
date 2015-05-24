@@ -166,10 +166,7 @@ private:
 
 	// 図形ドラッグ用
 private:
-	CRect m_rcClipRect			// 移動対象の図形（相対座標管理）
-		, m_rcClipDisplayRect	// 移動対象の図形（絶対座標管理）
-		, m_rcMovingRect		// 移動中のイメージ（ドロップ箇所）
-		, m_rcBorderRect;		// 移動中のイメージ（移動枠）
+	CRect m_rcBorderRect;		// 移動中のイメージ（重なり中のイメージ）
 	CPoint m_poMousePointerLocation; // マウスボタンが押されたときの位置
 	BOOL m_fLButtonClicking;	// マウスボタンが押されているかどうかを記録
 	BOOL m_fMoving;				// Move操作中
@@ -179,7 +176,7 @@ private:
 	BOOL m_fDragShuttling;		// DragShuttle操作中
 
 	BOOL IsPointInAnyClipRect(const CPoint& point);
-	BOOL IsPointInClipRect(const CPoint& point, const CRect& rcClipRect, CRect& rcHitTestRect);
+	BOOL IsPointInClipRect(const CPoint& point, const CRect& rcClipRect);
 	BOOL IsPointInTrimRange(const CPoint& point, const CRect& rcClipRect);
 	BOOL CheckInTrim(void);
 	BOOL CheckOutTrim(void);

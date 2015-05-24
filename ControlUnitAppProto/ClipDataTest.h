@@ -15,7 +15,7 @@ struct FilterInfo
 };
 
 
-class ClipDataTest : public CObject
+class ClipDataTest : public CRect
 {
 
 public:
@@ -47,6 +47,7 @@ private:
 	std::list<UUID> m_uiVALinkList;
 	BOOL m_fLocked;
 	std::map < int, FilterInfo > m_FilterMap;	//InPoint, FilterInfo 
+	CRect m_rcOperatingRect;
 
 	// For Prototype
 	CRect m_rcDisplayRect;
@@ -71,6 +72,10 @@ public:
 	void SetOutPoint(int iOutPoint) { m_iOutPoint = iOutPoint; }
 	void SetDuration(int iDuration) { m_iDuration = iDuration; }
 	void SetInOffset(int iInOffset) { m_iInOffset = iInOffset; }
+	void SetOperatingRect(const CRect& rcRect) { m_rcOperatingRect.CopyRect(rcRect); }
+	void CopyOperatingRectToOriginalRect(void) { CopyRect(m_rcOperatingRect); m_rcOperatingRect.SetRectEmpty(); }
+
+	void InitializeOperatingRect(void) { m_rcOperatingRect.SetRectEmpty(); }
 
 	ClipDataInfoTag GetTag(void) { return m_eClipDataInfoTag; }
 	UUID GetClipId(void) { return m_uiClipId; }
@@ -80,6 +85,7 @@ public:
 	int GetOutPoint(void) { return m_iOutPoint; }
 	int GetDuration(void) { return m_iDuration; }
 	int GetInOffset(void) { return m_iInOffset; }
+	CRect* GetOperatingRect(void) { return &m_rcOperatingRect; }
 
 	// For Prototype
 	void SetCurrentRect(const CRect& rcRect) { m_rcCurrentRect.CopyRect(rcRect); }

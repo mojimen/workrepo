@@ -41,7 +41,7 @@ void ClipDataTest::CreateClipInOutPoint()
 
 	m_iInPoint = In(mt);
 	m_iDuration = Dur(mt);
-	m_iOutPoint = m_iInPoint + m_iDuration;
+	m_iOutPoint = m_iInPoint + m_iDuration - 1;
 
 	return;
 }

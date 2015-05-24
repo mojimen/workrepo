@@ -1,6 +1,7 @@
 
 // ControlUnitAppProtoView.cpp : CControlUnitAppProtoView クラスの実装
 //
+// 移動判定の本格対応、クリップ隣接時の境界線、トランジション、ツールチップ、リップル／デュアル、デバイスコンテキスト作成を少なく、移動幅が大きい時のアニメーション、ウィンドウ全体描画
 
 //#include "math.h"
 
@@ -165,8 +166,8 @@ void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 			m_fLButtonClicking = TRUE;
 			SetCapture(); // マウスをキャプチャー( OnLButtonUp()で解放)
 			m_poMousePointerLocation = point;	// 移動量計算のため、初期座標を保存
-			m_rcMovingRect.CopyRect(m_rcClipDisplayRect);
-			m_rcBorderRect.CopyRect(m_rcClipDisplayRect);
+			m_clMovingClipData->SetOperatingRect(static_cast<CRect>(m_clMovingClipData));
+			m_rcBorderRect.CopyRect(static_cast<CRect>(m_clMovingClipData));
 			m_iOperatingClipFrameCount = 0;
 			Invalidate();
 		}
@@ -242,19 +243,21 @@ void CControlUnitAppProtoView::OnLButtonUp(UINT nFlags, CPoint point)
 	if (m_fMoving)
 	{
 		m_clMovingClipData->m_iTimelineInPoint += m_iOperatingClipFrameCount;
-	} 
+		m_clMovingClipData->CopyRect(m_clMovingClipData->GetOperatingRect());
+	}
 	else if (m_fSingleInTriming)
 	{
 		m_clMovingClipData->m_iTimelineInPoint += m_iOperatingClipFrameCount;
 		int iClipDuration = m_clMovingClipData->GetDuration();
 		// In側に伸びる（マイナス方向への移動）は長さを加算
 		m_clMovingClipData->SetDuration(iClipDuration - m_iOperatingClipFrameCount);
-
+		m_clMovingClipData->CopyRect(m_clMovingClipData->GetOperatingRect());
 	}
 	else if (m_fSingleOutTriming)
 	{
 		int iClipDuration = m_clMovingClipData->GetDuration();
 		m_clMovingClipData->SetDuration(iClipDuration + m_iOperatingClipFrameCount);
+		m_clMovingClipData->CopyRect(m_clMovingClipData->GetOperatingRect());
 	}
 	else if (m_fScrubing)
 	{
@@ -271,9 +274,6 @@ void CControlUnitAppProtoView::OnLButtonUp(UINT nFlags, CPoint point)
 		}
 	}
 
-	m_rcClipRect.SetRectEmpty();
-	m_rcClipDisplayRect.SetRectEmpty();
-	m_rcMovingRect.SetRectEmpty();
 	m_rcBorderRect.SetRectEmpty();
 	m_iOperatingFrameCount = 0;
 	m_iOperatingClipFrameCount = 0;
@@ -305,29 +305,23 @@ void CControlUnitAppProtoView::OnMouseMove(UINT nFlags, CPoint point)
 			m_iOperatingClipFrameCount = ChangeOperatingDistanceToTimelineFrames(szMoveSize, m_clMovingClipData->m_iTimelineInPoint);
 			CalcClipRectDisplayPoint(m_rcBorderRect, m_clMovingClipData, m_iOperatingClipFrameCount);
 			CheckMove(point);
-
-			//m_rcMovingRect.CopyRect(m_rcClipDisplayRect); //  ドロップ位置のイメージ座標
-			//m_rcBorderRect.CopyRect(m_rcClipDisplayRect); //  マウス位置のイメージ座標
-			//CalcClipRectDisplayPoint(m_rcMovingRect, m_clMovingClipData, m_iOperatingClipFrameCount);
-
 			Invalidate();
 		}
 		else if (m_fSingleInTriming || m_fSingleOutTriming)
 		{
-			m_rcMovingRect.CopyRect(m_rcClipDisplayRect); // 伸縮分のイメージ座標
+			m_clMovingClipData->SetOperatingRect(static_cast<CRect>(m_clMovingClipData)); // 伸縮分のイメージ座標
 			if (m_fSingleInTriming)
 			{					
 				m_iOperatingClipFrameCount = ChangeOperatingDistanceToTimelineFrames(szMoveSize, m_clMovingClipData->m_iTimelineInPoint);
 				CheckInTrim();
-				CalcClipRectDisplayPoint(m_rcMovingRect, m_clMovingClipData, 0, m_iOperatingClipFrameCount);
+				CalcClipRectDisplayPoint(*(m_clMovingClipData->GetOperatingRect()), m_clMovingClipData, 0, m_iOperatingClipFrameCount);
 			}
 			else
 			{
-				m_iOperatingClipFrameCount = ChangeOperatingDistanceToTimelineFrames(szMoveSize, (m_clMovingClipData->m_iTimelineInPoint + m_clMovingClipData->GetDuration()));
-				//m_rcMovingRect.right += szMoveSize.cx;
+				m_iOperatingClipFrameCount = ChangeOperatingDistanceToTimelineFrames(szMoveSize,
+					(m_clMovingClipData->m_iTimelineInPoint + m_clMovingClipData->GetDuration()));
 				CheckOutTrim();
-				//m_rcMovingRect.CopyRect(m_rcClipDisplayRect);
-				CalcClipRectDisplayPoint(m_rcMovingRect, m_clMovingClipData, 0, 0, m_iOperatingClipFrameCount);
+				CalcClipRectDisplayPoint(*(m_clMovingClipData->GetOperatingRect()), m_clMovingClipData, 0, 0, m_iOperatingClipFrameCount);
 			}
 			Invalidate();
 		}
@@ -398,14 +392,13 @@ void CControlUnitAppProtoView::OnPaint()
 
 	// 静止クリップ描画
 	CBrush brClipBrush(CLIPCOLOR_BRUSH);
-	CRect crClipRect;
-	CalcClipRectDisplayPoint(crClipRect, m_clClipData1);
-	dcMemDc.FillRect(&crClipRect, &brClipBrush);
-	CalcClipRectDisplayPoint(crClipRect, m_clClipData2);
-	dcMemDc.FillRect(&crClipRect, &brClipBrush);
+	CalcClipRectDisplayPoint(static_cast<CRect&>(*m_clClipData1), m_clClipData1);
+	dcMemDc.FillRect(static_cast<CRect*>(m_clClipData1), &brClipBrush);
+	CalcClipRectDisplayPoint(static_cast<CRect&>(*m_clClipData2), m_clClipData2);
+	dcMemDc.FillRect(static_cast<CRect*>(m_clClipData2), &brClipBrush);
 
 	// 操作イメージ描画
-	if ((m_fSingleInTriming || m_fSingleOutTriming || m_fMoving) && (!(m_rcMovingRect.IsRectEmpty())))
+	if ((m_fSingleInTriming || m_fSingleOutTriming || m_fMoving) && (!(m_clMovingClipData->GetOperatingRect()->IsRectEmpty())))
 	{
 		DrawOperatingClip(&dcViewDc, rcViewRect, dcMemDc);
 	}
@@ -674,20 +667,20 @@ BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRec
 
 	// 元のクリップの色を変える
 	CBrush brMovingClipBrush(LIGHTGRAYCOLOR_BRUSH);
-	CRect crClipRect;
-	CalcClipRectDisplayPoint(crClipRect, m_clMovingClipData);
-	dcMemDc.FillRect(&crClipRect, &brMovingClipBrush);
+	CalcClipRectDisplayPoint(static_cast<CRect&>(*m_clMovingClipData), m_clMovingClipData);
+	dcMemDc.FillRect(static_cast<CRect*>(m_clMovingClipData), &brMovingClipBrush);
 	brMovingClipBrush.DeleteObject();
 
 	CBrush brClipBrush(CLIPCOLOR_BRUSH);
 
 	if (m_fSingleInTriming || m_fSingleOutTriming)
 	{
+		CRect rcMovingRect = m_clMovingClipData->GetOperatingRect();
 		//CBrush brClipTrimBrush(ACCENTCOLOR_BRUSH);
-		dcMovingMemDc.FillRect(&m_rcMovingRect, &brClipBrush);
+		dcMovingMemDc.FillRect(rcMovingRect, &brClipBrush);
 		//brClipTrimBrush.DeleteObject();
-		dcMemDc.AlphaBlend(m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
-			&dcMovingMemDc, m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
+		dcMemDc.AlphaBlend(rcMovingRect.left, rcMovingRect.top, rcMovingRect.Width(), rcMovingRect.Height(),
+			&dcMovingMemDc, rcMovingRect.left, rcMovingRect.top, rcMovingRect.Width(), rcMovingRect.Height(),
 			blAlphaBlend);
 
 #ifdef PROTOTYPEMODE
@@ -706,7 +699,7 @@ BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRec
 		}
 		strText.Format(_T("TrimingClipInPoint  %d"), iPoint);
 		dcMemDc.TextOutW(300, 5, strText);
-		strText.Format(_T("TrimingClipLeftPoint  %d"), m_rcMovingRect.left);
+		strText.Format(_T("TrimingClipLeftPoint  %d"), rcMovingRect.left);
 		dcMemDc.TextOutW(300, 25, strText);
 		if (m_fSingleInTriming)
 		{
@@ -720,7 +713,7 @@ BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRec
 		}
 		strText.Format(_T("TrimingClipOutPoint  %d"), iPoint);
 		dcMemDc.TextOutW(300, 45, strText);
-		strText.Format(_T("TrimingClipRightPoint  %d"), m_rcMovingRect.right);
+		strText.Format(_T("TrimingClipRightPoint  %d"), rcMovingRect.right);
 		dcMemDc.TextOutW(300, 65, strText);
 		strText.Format(_T("TrimingClipDuration  %d"), iDuration);
 		dcMemDc.TextOutW(300, 85, strText);
@@ -730,11 +723,12 @@ BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRec
 	else
 	{
 		// ドロップ位置用
+		CRect rcMovingRect = m_clMovingClipData->GetOperatingRect();
 		//CBrush brClipMoveBrush(ACCENTCOLOR_BRUSH);
-		dcMovingMemDc.FillRect(&m_rcMovingRect, &brClipBrush);
+		dcMovingMemDc.FillRect(&rcMovingRect, &brClipBrush);
 		//brClipMoveBrush.DeleteObject();
-		dcMemDc.AlphaBlend(m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
-			&dcMovingMemDc, m_rcMovingRect.left, m_rcMovingRect.top, m_rcMovingRect.Width(), m_rcMovingRect.Height(),
+		dcMemDc.AlphaBlend(rcMovingRect.left, rcMovingRect.top, rcMovingRect.Width(), rcMovingRect.Height(),
+			&dcMovingMemDc, rcMovingRect.left, rcMovingRect.top, rcMovingRect.Width(), rcMovingRect.Height(),
 			blAlphaBlend);
 
 #ifdef PROTOTYPEMODE
@@ -743,9 +737,9 @@ BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRec
 		CString strText;
 		strText.Format(_T("MovingClipInPoint  %d"), m_clMovingClipData->m_iTimelineInPoint + m_iOperatingClipFrameCount);
 		dcMemDc.TextOutW(300, 5, strText);
-		strText.Format(_T("MovingClipLeftPoint  %d"), m_rcMovingRect.left);
+		strText.Format(_T("MovingClipLeftPoint  %d"), rcMovingRect.left);
 		dcMemDc.TextOutW(300, 25, strText);
-		strText.Format(_T("MovingClipRightPoint  %d"), m_rcMovingRect.right);
+		strText.Format(_T("MovingClipRightPoint  %d"), rcMovingRect.right);
 		dcMemDc.TextOutW(300, 45, strText);
 		strText.Format(_T("BorderClipLeftPoint  %d"), m_rcBorderRect.left);
 		dcMemDc.TextOutW(300, 65, strText);
@@ -754,7 +748,7 @@ BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRec
 #endif
 
 		// マウス位置追随用
-		if (!(m_rcBorderRect.EqualRect(m_rcMovingRect)))
+		if (!(m_rcBorderRect.EqualRect(rcMovingRect)))
 		{
 			CBrush brClipOverlapBrush(CLIPOVERLAPPINGCOLOR_BRUSH);
 			dcMovingMemDc.FillRect(&m_rcBorderRect, &brClipOverlapBrush);
@@ -1050,28 +1044,25 @@ int CControlUnitAppProtoView::OnCreate(LPCREATESTRUCT lpCreateStruct)
 BOOL CControlUnitAppProtoView::IsPointInAnyClipRect(const CPoint& point)
 {
 	m_fMoving = FALSE;
-	CRect rcClipRect1, rcClipRect2, rcHitTestRect;
-	// Clip1Hit判定
-	CalcClipRect(rcClipRect1, m_clClipData1->m_iTimelineInPoint, m_clClipData1->GetDuration());
-	CalcClipRect(rcClipRect2, m_clClipData2->m_iTimelineInPoint, m_clClipData2->GetDuration());
-	if (IsPointInClipRect(point, rcClipRect1, rcHitTestRect))
+	if (IsPointInClipRect(point, static_cast<CRect&>(*m_clClipData1)))
 	{
-		CalcClipRectDisplayPoint(m_rcClipDisplayRect, m_clClipData1);
+		CalcClipRectDisplayPoint(static_cast<CRect>(m_clClipData1), m_clClipData1);
 		m_clMovingClipData = m_clClipData1;
 		m_clStaticClipData = m_clClipData2;
 	}
 	// Clip2Hit判定
-	else if (IsPointInClipRect(point, rcClipRect2, rcHitTestRect))
+	else if (IsPointInClipRect(point, static_cast<CRect&>(*m_clClipData2)))
 	{
-		CalcClipRectDisplayPoint(m_rcClipDisplayRect, m_clClipData2);
+		CalcClipRectDisplayPoint(static_cast<CRect>(m_clClipData2), m_clClipData2);
 		m_clMovingClipData = m_clClipData2;
 		m_clStaticClipData = m_clClipData1;
 	}
 	return (m_fMoving || m_fSingleInTriming || m_fSingleOutTriming);
 }
 
-BOOL CControlUnitAppProtoView::IsPointInClipRect(const CPoint& point, const CRect& rcClipRect, CRect& rcHitTestRect)
+BOOL CControlUnitAppProtoView::IsPointInClipRect(const CPoint& point, const CRect& rcClipRect)
 {
+	CRect rcHitTestRect;
 	rcHitTestRect.CopyRect(rcClipRect);
 	// クリップ長が規定値より短い場合は規定値幅で判定する
 	if (rcClipRect.Width() < kClipHitCheckMinWidth)
@@ -1085,7 +1076,6 @@ BOOL CControlUnitAppProtoView::IsPointInClipRect(const CPoint& point, const CRec
 	{
 		// Trim判定で漏れたらMove
 		m_fMoving = !(IsPointInTrimRange(point, &rcClipRect));
-		m_rcClipDisplayRect.CopyRect(rcClipRect);
 	}
 	return (m_fMoving || m_fSingleInTriming || m_fSingleOutTriming);
 }
@@ -1190,21 +1180,6 @@ BOOL CControlUnitAppProtoView::CheckOutTrim(void)
 		m_iOperatingClipFrameCount = m_clStaticClipData->m_iTimelineInPoint - (m_clMovingClipData->m_iTimelineInPoint + iDuration);
 		return FALSE;
 	}
-	// 重なりチェック
-	CRect rcWorkRect;
-	rcWorkRect.CopyRect(m_clStaticClipData->GetDisplayRect());
-	if ((m_rcClipDisplayRect.right < rcWorkRect.right) && (m_rcMovingRect.right >= rcWorkRect.left))
-	{
-		m_rcMovingRect.right = rcWorkRect.left - 1;
-		return FALSE;
-	}
-
-	// 範囲チェック
-	//if (m_rcMovingRect.right > m_rcTimelineDataRect.right)
-	//{
-	//	m_rcMovingRect.right = m_rcTimelineDataRect.right;
-	//	return FALSE;
-	//}
 
 	return TRUE;
 }
@@ -1218,11 +1193,6 @@ BOOL CControlUnitAppProtoView::CheckMove(CPoint& point)
 		m_iOperatingClipFrameCount = m_clMovingClipData->m_iTimelineInPoint * -1;
 		return FALSE;
 	}
-	//if (m_rcMovingRect.right > m_rcTimelineDataRect.right)
-	//{
-	//	m_rcMovingRect.MoveToX(m_rcTimelineDataRect.right - m_rcMovingRect.Width());
-	//	return FALSE;
-	//}
 
 	// 重なりチェック
 	// TODO: 重なった先の再判定が必要（再帰処理にするか）
@@ -1236,11 +1206,6 @@ BOOL CControlUnitAppProtoView::CheckMove(CPoint& point)
 		((iMovingClipInFrame <= iStaticClipInFrame) && (iStaticClipInFrame <= iMovingClipOutFrame)) ||
 		((iMovingClipInFrame <= iStaticClipOutFrame) && (iStaticClipOutFrame <= iMovingClipOutFrame)))
 	{
-	//if (((m_rcMovingRect.left <= rcStaticClip.left) && (rcStaticClip.left <= m_rcMovingRect.right)) ||
-	//	((m_rcMovingRect.left <= rcStaticClip.right) && (rcStaticClip.right <= m_rcMovingRect.right))||
-	//	((rcStaticClip.left <= m_rcMovingRect.left) && (m_rcMovingRect.right <= rcStaticClip.right)) ||
-	//	((m_rcMovingRect.left <= rcStaticClip.left) && (rcStaticClip.right <= m_rcMovingRect.right)))
-	//{
 		int iStaticClipCenterFrame = iStaticClipInFrame + static_cast<int>(floor(m_clStaticClipData->GetDuration() / 2));
 		int iDropInPoint = 0;
 		if (iMovingClipInFrame <= iStaticClipCenterFrame)
@@ -1252,28 +1217,12 @@ BOOL CControlUnitAppProtoView::CheckMove(CPoint& point)
 			iDropInPoint = iStaticClipOutFrame + 1;
 		}
 		m_iOperatingClipFrameCount = iDropInPoint - m_clMovingClipData->m_iTimelineInPoint;
-		CalcClipRect(m_rcMovingRect, iDropInPoint, m_clMovingClipData->GetDuration());
+		CalcClipRect(*(m_clMovingClipData->GetOperatingRect()), iDropInPoint, m_clMovingClipData->GetDuration());
 		return FALSE;
-		//long lSplitPoint = rcStaticClip.right - static_cast<long>(floor(rcStaticClip.Width() / 2));
-		////if (point.x < lSplitPoint)
-		//if (m_rcMovingRect.left < lSplitPoint)
-		//{
-		//	long lCorrectionWidth = m_rcMovingRect.right - rcStaticClip.left + 1;
-		//	m_rcMovingRect.left -= lCorrectionWidth;
-		//	m_rcMovingRect.right -= lCorrectionWidth;
-		//	return FALSE;
-		//}
-		//else
-		//{
-		//	long lCorrectionWidth = rcStaticClip.right - m_rcMovingRect.left + 1;
-		//	m_rcMovingRect.left += lCorrectionWidth;
-		//	m_rcMovingRect.right += lCorrectionWidth;
-		//	return FALSE;
-		//}
 
 	}
 	
-	CalcClipRectDisplayPoint(m_rcMovingRect, m_clMovingClipData, m_iOperatingClipFrameCount);
+	CalcClipRectDisplayPoint(*(m_clMovingClipData->GetOperatingRect()), m_clMovingClipData, m_iOperatingClipFrameCount);
 	return TRUE;
 }
 
