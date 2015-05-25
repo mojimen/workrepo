@@ -684,7 +684,6 @@ BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRec
 			blAlphaBlend);
 
 #ifdef PROTOTYPEMODE
-		int iOldBkMode;
 		//TODO: デバッグ
 		CString strText;
 		int iPoint;
@@ -732,7 +731,6 @@ BOOL CControlUnitAppProtoView::DrawOperatingClip(const CDC* dcViewDc, const CRec
 			blAlphaBlend);
 
 #ifdef PROTOTYPEMODE
-		int iOldBkMode;
 		//TODO: デバッグ
 		CString strText;
 		strText.Format(_T("MovingClipInPoint  %d"), m_clMovingClipData->m_iTimelineInPoint + m_iOperatingClipFrameCount);
@@ -1286,6 +1284,7 @@ BOOL CControlUnitAppProtoView::CalcClipRect(CRect& rcClipRect, const int& iInPoi
 	rcClipRect.left = ChangeTimelineFramePositionToDisplayPoint(iDisplayInPoint);
 	rcClipRect.right = ChangeTimelineFramePositionToDisplayPoint(iDisplayOutPoint);
 
+	return TRUE;
 }
 // フレーム位置を画面上の座標に変換する
 int CControlUnitAppProtoView::ChangeTimelineFramePositionToDisplayPoint(const int iFrame)

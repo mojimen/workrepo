@@ -112,13 +112,13 @@ private:
 	const int kTimelineCursorDragArea = 5;					// タイムラインカーソルドラッグ時のヒット領域（左右にこの値をプラスして判定）
 	const int kTimelineCursorDragGuideLineThickness = 1;	// タイムラインカーソルドラッグ時のガイドラインの太さ
 	const int kTimelineCursorDragGuideLineAlpha = 128;		// タイムラインカーソルドラッグ時のガイドラインのアルファ値
-	const float kTimelineCursorDragOneSpeed = 0.1;			// タイムラインカーソルドラッグ時の×１倍移動範囲
-	const float kTimelineCursorDragTowSpeed = 0.2;			// タイムラインカーソルドラッグ時の×２倍移動範囲
-	const float kTimelineCursorDragFourSpeed = 0.28;		// タイムラインカーソルドラッグ時の×４倍移動範囲
-	const float kTimelineCursorDragEightSpeed = 0.36;		// タイムラインカーソルドラッグ時の×８倍移動範囲
-	const float kTimelineCursorDragSixteenSpeed = 0.42;		// タイムラインカーソルドラッグ時の×１６倍移動範囲
-	const float kTimelineCursorDragThirtyTwoSpeed = 0.47;	// タイムラインカーソルドラッグ時の×３２倍移動範囲
-	const float kTimelineCursorDragSixtyFourSpeed = 0.5;	// タイムラインカーソルドラッグ時の×６４倍移動範囲
+	const float kTimelineCursorDragOneSpeed = 0.1f;			// タイムラインカーソルドラッグ時の×１倍移動範囲
+	const float kTimelineCursorDragTowSpeed = 0.2f;			// タイムラインカーソルドラッグ時の×２倍移動範囲
+	const float kTimelineCursorDragFourSpeed = 0.28f;		// タイムラインカーソルドラッグ時の×４倍移動範囲
+	const float kTimelineCursorDragEightSpeed = 0.36f;		// タイムラインカーソルドラッグ時の×８倍移動範囲
+	const float kTimelineCursorDragSixteenSpeed = 0.42f;	// タイムラインカーソルドラッグ時の×１６倍移動範囲
+	const float kTimelineCursorDragThirtyTwoSpeed = 0.47f;	// タイムラインカーソルドラッグ時の×３２倍移動範囲
+	const float kTimelineCursorDragSixtyFourSpeed = 0.5f;	// タイムラインカーソルドラッグ時の×６４倍移動範囲
 
 
 	//表示情報
