@@ -123,14 +123,14 @@ private:
 
 	//表示情報
 private:
-	CRect m_rcPreviewPanelRect;
-	CRect m_rcTimelineEditPanelRect;
-	CRect m_rcTimelineEditHeaderRect;
-	CRect m_rcTimelineControlPanelRect;
-	CRect m_rcSeekBarRect;
-	CRect m_rcTrackHeaderRect;
-	CRect m_rcTimelineDataRect;
-	CRect m_rcTimelineCursorHitArea;
+	CRect m_prcPreviewPanelRect;
+	CRect m_prcTimelineEditPanelRect;
+	CRect m_prcTimelineEditHeaderRect;
+	CRect m_prcTimelineControlPanelRect;
+	CRect m_prcSeekBarRect;
+	CRect m_prcTrackHeaderRect;
+	CRect m_prcTimelineDataRect;
+	CRect m_prcTimelineCursorHitArea;
 
 	int m_iTimelineCursorFramePosition;	// タイムラインカーソル位置のフレーム番号
 	int m_iLeftFrameNumber;				// タイムラインデータ表示範囲の先頭フレーム

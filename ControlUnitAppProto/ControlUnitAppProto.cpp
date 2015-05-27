@@ -11,6 +11,7 @@
 #include "ChildFrm.h"
 #include "ControlUnitAppProtoDoc.h"
 #include "ControlUnitAppProtoView.h"
+#include "TestView.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW

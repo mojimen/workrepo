@@ -1,9 +1,15 @@
 #pragma once
 #include <list>
 #include <map>
-#include <random>
 #include <rpc.h>
+
 #pragma comment(lib ,"rpcrt4.lib")
+
+#include "RectOpenGL.h"
+
+// Debug
+#include <random>
+
 
 // ClipDataTest コマンド ターゲット
 
@@ -15,7 +21,7 @@ struct FilterInfo
 };
 
 
-class ClipDataTest : public CRect
+class ClipDataTest : public RectOpenGL
 {
 
 public:
@@ -47,11 +53,15 @@ private:
 	std::list<UUID> m_uiVALinkList;
 	BOOL m_fLocked;
 	std::map < int, FilterInfo > m_FilterMap;	//InPoint, FilterInfo 
-	CRect m_rcOperatingRect;
 
-	// For Prototype
-	CRect m_rcDisplayRect;
-	CRect m_rcCurrentRect;
+	// ForView
+	CRect m_rcOperatingRect;
+	//double m_dMovingWorldLeft;
+	//double m_dMovingWorldRight;
+	//double m_dMovingWorldTop;
+	//double m_dMovingWorldBottom;
+	float m_fOperatingVert[4][3];
+
 
 public:
 	int m_iTimelineInPoint; // プロト設計中のワーク項目
@@ -74,6 +84,13 @@ public:
 	void SetInOffset(int iInOffset) { m_iInOffset = iInOffset; }
 	void SetOperatingRect(const CRect& rcRect) { m_rcOperatingRect.CopyRect(rcRect); }
 	void CopyOperatingRectToOriginalRect(void) { CopyRect(m_rcOperatingRect); m_rcOperatingRect.SetRectEmpty(); }
+	//void SetMovingWorldLeft(double dLeft) { m_dMovingWorldLeft = dLeft; }
+	//void SetMovingWorldRight(double dRight) { m_dMovingWorldRight = dRight; }
+	//void SetMovingWorldTop(double dTop) { m_dMovingWorldTop = dTop; }
+	//void SetMovingWorldBottom(double dBottom) { m_dMovingWorldBottom = dBottom; }
+	//void SetMovingWorldPoint(const double dLeft, const double dRight, const double dTop, const double dBottom);
+	void SetOperatingVert(const float fLeft, const float fTop, const float fRight, const float fBottom);
+	void SetOperatingVert(const int iHeight);
 
 	void InitializeOperatingRect(void) { m_rcOperatingRect.SetRectEmpty(); }
 
@@ -86,12 +103,15 @@ public:
 	int GetDuration(void) { return m_iDuration; }
 	int GetInOffset(void) { return m_iInOffset; }
 	CRect* GetOperatingRect(void) { return &m_rcOperatingRect; }
+	//double GetMovingWorldLeft(void) { return m_dMovingWorldLeft; }
+	//double GetMovingWorldRight(void) { return m_dMovingWorldRight; }
+	//double GetMovingWorldTop(void) { return m_dMovingWorldTop; }
+	//double GetMovingWorldBottom(void) { return m_dMovingWorldBottom; }
+	//void GetMovingWorldPoint(double& dLeft, double& dRight, double& dTop, double& dBottom);
+	float(*GetOperatingVert(void))[3] { return m_fOperatingVert; }
+	void GetOperatingVert(float(&fVert)[4][3]);
 
-	// For Prototype
-	void SetCurrentRect(const CRect& rcRect) { m_rcCurrentRect.CopyRect(rcRect); }
-	CRect GetCurrentRect(void) { return m_rcCurrentRect; }
-	void SetDisplayRect(const CRect& rcRect) { m_rcDisplayRect.CopyRect(rcRect); }
-	CRect GetDisplayRect(void) { return m_rcDisplayRect; }
+
 
 
 };

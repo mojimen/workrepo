@@ -19,6 +19,7 @@ public:
 // オーバーライド
 	public:
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
+	virtual BOOL OnCreateClient(LPCREATESTRUCT lpcs, CCreateContext* pContext);
 
 // 実装
 public:
@@ -31,4 +32,10 @@ public:
 // 生成された、メッセージ割り当て関数
 protected:
 	DECLARE_MESSAGE_MAP()
+
+protected:
+	CSplitterWnd m_wndSplitter;
+
+public:
+	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
 };

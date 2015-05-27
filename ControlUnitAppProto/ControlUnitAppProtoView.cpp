@@ -1,7 +1,7 @@
 
 // ControlUnitAppProtoView.cpp : CControlUnitAppProtoView クラスの実装
 //
-// 移動判定の本格対応、クリップ隣接時の境界線、トランジション、ツールチップ、リップル／デュアル、デバイスコンテキスト作成を少なく、移動幅が大きい時のアニメーション、ウィンドウ全体描画
+// 移動判定の本格対応、クリップ隣接時の境界線、トランジション、ツールチップ、リップル／デュアルデバイスコンテキスト作成を少なく、移動幅が大きい時のアニメーション、ウィンドウ全体描画
 
 //#include "math.h"
 
@@ -16,7 +16,6 @@
 #include "ControlUnitAppProtoDoc.h"
 #include "ControlUnitAppProtoView.h"
 #include "ClipDataTest.h"
-#include "TestDialog.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -63,8 +62,8 @@ CControlUnitAppProtoView::CControlUnitAppProtoView()
 	m_fScrubing = FALSE;
 	m_fDragShuttling = FALSE;
 
-	m_rcPreviewPanelRect.bottom = m_rcPreviewPanelRect.top + kPreviewPanelDefaltHeight;
-	//m_rcTimelineEditPanelRect.bottom = m_rcTimelineEditPanelRect.top + kTimelineEditDefaltHeight;
+	m_prcPreviewPanelRect.bottom = m_prcPreviewPanelRect.top + kPreviewPanelDefaltHeight;
+	//m_prcTimelineEditPanelRect.bottom = m_prcTimelineEditPanelRect.top + kTimelineEditDefaltHeight;
 
 	m_iLeftFrameNumber = 0;
 	m_iRightFrameNumber = 0;
@@ -106,7 +105,7 @@ void CControlUnitAppProtoView::OnDraw(CDC* /*pDC*/)
 // 右ボタンアップ
 void CControlUnitAppProtoView::OnRButtonUp(UINT /* nFlags */, CPoint point)
 {
-	if (m_rcTimelineControlPanelRect.PtInRect(point))
+	if (m_prcTimelineControlPanelRect.PtInRect(point))
 	{
 		++m_iSelectedDisplayScaleNumber;
 		if (ChangeDisplayScale())
@@ -158,7 +157,7 @@ void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 	// TODO: ここにメッセージ ハンドラー コードを追加するか、既定の処理を呼び出します。
 
 	// タイムラインデータエリア内判定
-	if(m_rcTimelineDataRect.PtInRect(point))
+	if(m_prcTimelineDataRect.PtInRect(point))
 	{
 		// クリップ判定
 		if (IsPointInAnyClipRect(point))
@@ -172,7 +171,7 @@ void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 			Invalidate();
 		}
 		// タイムラインカーソル判定
-		else if (m_rcTimelineCursorHitArea.PtInRect(point))
+		else if (m_prcTimelineCursorHitArea.PtInRect(point))
 		{
 			m_fLButtonClicking = TRUE;
 			m_fDragShuttling = TRUE;
@@ -186,7 +185,7 @@ void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 	else
 	{
 		// タイムラインカーソル判定
-		if (m_rcTimelineCursorHitArea.PtInRect(point))
+		if (m_prcTimelineCursorHitArea.PtInRect(point))
 		{
 			m_fLButtonClicking = TRUE;
 			m_fDragShuttling = TRUE;
@@ -220,7 +219,7 @@ void CControlUnitAppProtoView::OnLButtonDown(UINT nFlags, CPoint point)
 #endif
 		}
 		// タイムラインコントロールパネル内判定
-		else if (m_rcTimelineControlPanelRect.PtInRect(point))
+		else if (m_prcTimelineControlPanelRect.PtInRect(point))
 		{
 			--m_iSelectedDisplayScaleNumber;
 			if (ChangeDisplayScale())
@@ -359,7 +358,7 @@ void CControlUnitAppProtoView::OnPaint()
 	CRect rcViewRect;
 	GetClientRect(&rcViewRect);
 
-	// View内の表示位置確認
+	// View内の表示位置計算
 	SetPanelRect();
 
 	//--------- ここからダブルバッファ用コード
@@ -378,10 +377,10 @@ void CControlUnitAppProtoView::OnPaint()
 	// 枠描画
 	CPen brPenBrush(PS_SOLID, 1, LIGHTGRAYCOLOR_BRUSH);
 	CPen* oldpen = dcMemDc.SelectObject(&brPenBrush);
-	dcMemDc.Rectangle(m_rcPreviewPanelRect);
-	dcMemDc.Rectangle(m_rcTimelineControlPanelRect);
-	dcMemDc.Rectangle(m_rcTrackHeaderRect);
-	dcMemDc.Rectangle(m_rcTimelineDataRect);
+	dcMemDc.Rectangle(m_prcPreviewPanelRect);
+	dcMemDc.Rectangle(m_prcTimelineControlPanelRect);
+	dcMemDc.Rectangle(m_prcTrackHeaderRect);
+	dcMemDc.Rectangle(m_prcTimelineDataRect);
 	dcMemDc.SelectObject(oldpen);
 
 	// コントロールパネル描画
@@ -419,6 +418,7 @@ void CControlUnitAppProtoView::OnPaint()
 	brPenBrush.DeleteObject();
 	brClipBrush.DeleteObject();
 
+	//dcViewDc.DeleteDC();
 }
 
 // タイムラインコントロールパネルの描画を行う
@@ -426,7 +426,7 @@ void CControlUnitAppProtoView::DrawTimelineControlPanel(CDC& dcMemDc)
 {
 	// 背景塗りつぶし
 	CBrush brControlPanelBaseBrush(TIMELINECONTROLPANELBACKGROUNDCOLOR_BRUSH);
-	dcMemDc.FillRect(m_rcTimelineControlPanelRect, &brControlPanelBaseBrush);
+	dcMemDc.FillRect(m_prcTimelineControlPanelRect, &brControlPanelBaseBrush);
 	brControlPanelBaseBrush.DeleteObject();
 
 #ifdef PROTOTYPEMODE
@@ -435,7 +435,7 @@ void CControlUnitAppProtoView::DrawTimelineControlPanel(CDC& dcMemDc)
 	iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
 	COLORREF crOldTextColor = dcMemDc.SetTextColor(SEEKBARTIMECODETEXTCOLOR_BRUSH);
 	strText.Format(_T("%d"), m_iFramePerBase);
-	dcMemDc.TextOut(m_rcTimelineControlPanelRect.left + 5, m_rcTimelineControlPanelRect.bottom - 20, strText);
+	dcMemDc.TextOut(m_prcTimelineControlPanelRect.left + 5, m_prcTimelineControlPanelRect.bottom - 20, strText);
 	dcMemDc.SetBkMode(iOldBkMode);
 	dcMemDc.SetTextColor(crOldTextColor);
 #endif
@@ -446,7 +446,7 @@ void CControlUnitAppProtoView::DrawSeekBar(CDC& dcMemDc)
 {
 	// 背景塗りつぶし
 	CBrush brSeekBarBaseBrush(SEEKBARBACKGROUNDCOLOR_BRUSH);
-	dcMemDc.FillRect(m_rcSeekBarRect, &brSeekBarBaseBrush);
+	dcMemDc.FillRect(m_prcSeekBarRect, &brSeekBarBaseBrush);
 
 	CPen brSeekBarBigScalePen(PS_SOLID, kSeekBarMiddleScaleThikness, SEEKBARBIGSCALECOLOR_BRUSH);
 	CPen brSeekBarMiddleScalePen(PS_SOLID, kSeekBarMiddleScaleThikness, SEEKBARMIDDLESCALECOLOR_BRUSH);
@@ -458,11 +458,11 @@ void CControlUnitAppProtoView::DrawSeekBar(CDC& dcMemDc)
 
 	POINT pScaleLine;
 	pScaleLine.x = m_iTimelineCursorPoint;
-	pScaleLine.y = m_rcSeekBarRect.top;
+	pScaleLine.y = m_prcSeekBarRect.top;
 	int iDrawFrame = m_iTimelineCursorFramePosition + m_iOperatingFrameCount;
 
 	// カーソルから右側の目盛り描画
-	while (pScaleLine.x < m_rcSeekBarRect.right)
+	while (pScaleLine.x < m_prcSeekBarRect.right)
 	{
 		if (iDrawFrame == m_iTimelineCursorFramePosition)
 		{
@@ -510,9 +510,9 @@ void CControlUnitAppProtoView::DrawSeekBar(CDC& dcMemDc)
 	}
 	// カーソルから左側の目盛り描画
 	pScaleLine.x = m_iTimelineCursorPoint;
-	pScaleLine.y = m_rcSeekBarRect.top;
+	pScaleLine.y = m_prcSeekBarRect.top;
 	iDrawFrame = m_iTimelineCursorFramePosition + m_iOperatingFrameCount;
-	while ((pScaleLine.x > m_rcSeekBarRect.left) && (iDrawFrame >= 0))
+	while ((pScaleLine.x > m_prcSeekBarRect.left) && (iDrawFrame >= 0))
 	{
 		// 大目盛り
 		if ((iDrawFrame % (kSeekBarBigScaleInterval * m_iFramePerBase)) == 0)
@@ -576,17 +576,17 @@ void CControlUnitAppProtoView::DrawBigScale(CDC& dcMemDc, const int iDrawFrame, 
 	iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
 	COLORREF crOldTextColor = dcMemDc.SetTextColor(SEEKBARTIMECODETEXTCOLOR_BRUSH);
 	strFrameNumber.Format(_T("%d"), iDrawFrame);
-	dcMemDc.TextOut(pScaleLine.x + 2, m_rcSeekBarRect.top + 2, strFrameNumber);
+	dcMemDc.TextOut(pScaleLine.x + 2, m_prcSeekBarRect.top + 2, strFrameNumber);
 	dcMemDc.SetBkMode(iOldBkMode);
 	dcMemDc.SetTextColor(crOldTextColor);
 
 	dcMemDc.SelectObject(brScalePen);
-	pScaleLine.y = m_rcSeekBarRect.top + kSeekBarBigScaleMargin;
+	pScaleLine.y = m_prcSeekBarRect.top + kSeekBarBigScaleMargin;
 	dcMemDc.MoveTo(pScaleLine);
-	pScaleLine.y = m_rcSeekBarRect.bottom;
+	pScaleLine.y = m_prcSeekBarRect.bottom;
 	dcMemDc.LineTo(pScaleLine);
 	dcMemDc.SelectObject(brLinePen);
-	pScaleLine.y = m_rcTimelineDataRect.bottom;
+	pScaleLine.y = m_prcTimelineDataRect.bottom;
 	dcMemDc.LineTo(pScaleLine);
 
 	return;
@@ -605,18 +605,18 @@ void CControlUnitAppProtoView::DrawMiddleScale(CDC& dcMemDc, const int iDrawFram
 	iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
 	COLORREF crOldTextColor = dcMemDc.SetTextColor(SEEKBARTIMECODETEXTCOLOR_BRUSH);
 	strFrameNumber.Format(_T("%d"), (iDrawFrame % (kSeekBarBigScaleInterval * m_iSeekBarScaleCountPerBase)));
-	dcMemDc.TextOut(pScaleLine.x + 2, m_rcSeekBarRect.top + 6, strFrameNumber);
+	dcMemDc.TextOut(pScaleLine.x + 2, m_prcSeekBarRect.top + 6, strFrameNumber);
 	dcMemDc.SetBkMode(iOldBkMode);
 	dcMemDc.SetTextColor(crOldTextColor);
 #endif
 	dcMemDc.SelectObject(brScalePen);
-	pScaleLine.y = m_rcSeekBarRect.top + kSeekBarMiddleScaleMargin;
+	pScaleLine.y = m_prcSeekBarRect.top + kSeekBarMiddleScaleMargin;
 	dcMemDc.MoveTo(pScaleLine);
-	pScaleLine.y = m_rcSeekBarRect.bottom;
+	pScaleLine.y = m_prcSeekBarRect.bottom;
 	dcMemDc.LineTo(pScaleLine);
 #ifdef PROTOTYPEMODE
 	dcMemDc.SelectObject(brLinePen);
-	pScaleLine.y = m_rcTimelineDataRect.bottom;
+	pScaleLine.y = m_prcTimelineDataRect.bottom;
 	dcMemDc.LineTo(pScaleLine);
 #endif
 
@@ -629,13 +629,13 @@ void CControlUnitAppProtoView::DrawSmallScale(CDC& dcMemDc, const int iDrawFrame
 	CString strFrameNumber;
 
 	dcMemDc.SelectObject(brScalePen);
-	pScaleLine.y = m_rcSeekBarRect.top + kSeekBarSmallScaleMargin;
+	pScaleLine.y = m_prcSeekBarRect.top + kSeekBarSmallScaleMargin;
 	dcMemDc.MoveTo(pScaleLine);
-	pScaleLine.y = m_rcSeekBarRect.bottom;
+	pScaleLine.y = m_prcSeekBarRect.bottom;
 	dcMemDc.LineTo(pScaleLine);
 #ifdef PROTOTYPEMODE
 	dcMemDc.SelectObject(brLinePen);
-	pScaleLine.y = m_rcTimelineDataRect.bottom;
+	pScaleLine.y = m_prcTimelineDataRect.bottom;
 	dcMemDc.LineTo(pScaleLine);
 #endif
 
@@ -795,8 +795,8 @@ BOOL CControlUnitAppProtoView::DrawTimelineCursor(const CDC* dcViewDc, const CRe
 	CRect rcTimelineCursorRect;
 	rcTimelineCursorRect.left = m_iTimelineCursorPoint;
 	rcTimelineCursorRect.right = rcTimelineCursorRect.left + kTimelineCursorThickness - 1;
-	rcTimelineCursorRect.top = m_rcSeekBarRect.top;
-	rcTimelineCursorRect.bottom = m_rcTimelineDataRect.bottom;
+	rcTimelineCursorRect.top = m_prcSeekBarRect.top;
+	rcTimelineCursorRect.bottom = m_prcTimelineDataRect.bottom;
 
 	// ラインを描画
 	CBrush brTimelineCursorBrush(TIMELINECURSORCOLOR_BRUSH);
@@ -820,7 +820,7 @@ BOOL CControlUnitAppProtoView::DrawTimelineCursor(const CDC* dcViewDc, const CRe
 		int iOldBkMode = dcMemDc.SetBkMode(TRANSPARENT);
 		COLORREF crOldTextColor = dcMemDc.SetTextColor(SEEKBARTIMECODETEXTCOLOR_BRUSH);
 		strText.Format(_T("×  %d"), m_fSuttleSpeed);
-		dcMemDc.TextOutW(90, m_rcTimelineControlPanelRect.bottom - 20, strText);
+		dcMemDc.TextOutW(90, m_prcTimelineControlPanelRect.bottom - 20, strText);
 		dcMemDc.SetBkMode(iOldBkMode);
 		dcMemDc.SetTextColor(crOldTextColor);
 
@@ -850,12 +850,12 @@ BOOL CControlUnitAppProtoView::DrawTimelineCursor(const CDC* dcViewDc, const CRe
 // シャトル操作時のガイドラインを表示する
 void CControlUnitAppProtoView::DrawShuttleGuideLine(CDC& dcMemDc, CDC& dcMovingMemDc, BLENDFUNCTION& blAlphaBlend, CRect& rcLineRect, float fGuideAreaWidth)
 {
-	int iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * fGuideAreaWidth));
+	int iGuideAreaWidth = static_cast<int>(floor(m_prcTimelineDataRect.Width() * fGuideAreaWidth));
 
 	rcLineRect.left = m_iTimelineCursorPoint + iGuideAreaWidth - kTimelineCursorDragGuideLineThickness;
 	rcLineRect.right = rcLineRect.left + kTimelineCursorDragGuideLineThickness;
-	rcLineRect.top = m_rcTimelineDataRect.top;
-	rcLineRect.bottom = m_rcTimelineDataRect.bottom;
+	rcLineRect.top = m_prcTimelineDataRect.top;
+	rcLineRect.bottom = m_prcTimelineDataRect.bottom;
 
 	// ラインを描画
 	CBrush brShuttleGuidLineBrush(TIMELINECURSORDRAGGUIDELINECOLOR_BRUSH);
@@ -910,54 +910,54 @@ void CControlUnitAppProtoView::SetPanelRect(void)
 	GetClientRect(&rcViewRect);
 
 	float fViewHeight = static_cast<float>(rcViewRect.Height());
-	long lViewHeight = static_cast<long>(floor((fViewHeight - static_cast<float>(m_rcSeekBarRect.Height())) / 2));
+	long lViewHeight = static_cast<long>(floor((fViewHeight - static_cast<float>(m_prcSeekBarRect.Height())) / 2));
 
 	// TODO: いずれはメンバ変数に！
 	int iTimelineEditHeaderDefaltHeight = kTimelineEditHeaderDefaltHeight;
 	int iTimelineControlPanelDefaultWidth = kTimelineControlPanelDefaultWidth;
 
 
-	m_rcPreviewPanelRect.left = rcViewRect.left;
-	m_rcPreviewPanelRect.top = rcViewRect.top;
-	m_rcPreviewPanelRect.right = rcViewRect.right;
-	m_rcPreviewPanelRect.bottom = rcViewRect.top + lViewHeight;
+	m_prcPreviewPanelRect.left = rcViewRect.left;
+	m_prcPreviewPanelRect.top = rcViewRect.top;
+	m_prcPreviewPanelRect.right = rcViewRect.right;
+	m_prcPreviewPanelRect.bottom = rcViewRect.top + lViewHeight;
 
-	m_rcTimelineEditPanelRect.left = rcViewRect.left;
-	m_rcTimelineEditPanelRect.top = m_rcPreviewPanelRect.bottom + kSplitterHeight;
-	m_rcTimelineEditPanelRect.right = rcViewRect.right;
-	m_rcTimelineEditPanelRect.bottom = rcViewRect.bottom;
+	m_prcTimelineEditPanelRect.left = rcViewRect.left;
+	m_prcTimelineEditPanelRect.top = m_prcPreviewPanelRect.bottom + kSplitterHeight;
+	m_prcTimelineEditPanelRect.right = rcViewRect.right;
+	m_prcTimelineEditPanelRect.bottom = rcViewRect.bottom;
 
 	// タイムラインヘッダーエリアの配置
-	m_rcTimelineEditHeaderRect.CopyRect(m_rcTimelineEditPanelRect);
-	m_rcTimelineEditHeaderRect.bottom = m_rcTimelineEditHeaderRect.top + iTimelineEditHeaderDefaltHeight;
+	m_prcTimelineEditHeaderRect.CopyRect(m_prcTimelineEditPanelRect);
+	m_prcTimelineEditHeaderRect.bottom = m_prcTimelineEditHeaderRect.top + iTimelineEditHeaderDefaltHeight;
 
 	// タイムラインコントロールエリアの配置
-	m_rcTimelineControlPanelRect.CopyRect(m_rcTimelineEditHeaderRect);
-	m_rcTimelineControlPanelRect.right = m_rcTimelineControlPanelRect.left + iTimelineControlPanelDefaultWidth;
+	m_prcTimelineControlPanelRect.CopyRect(m_prcTimelineEditHeaderRect);
+	m_prcTimelineControlPanelRect.right = m_prcTimelineControlPanelRect.left + iTimelineControlPanelDefaultWidth;
 
 	// シークバーエリアの配置
-	m_rcSeekBarRect.CopyRect(m_rcTimelineEditHeaderRect);
-	m_rcSeekBarRect.left = m_rcTimelineControlPanelRect.right + kSplitterWidth;
+	m_prcSeekBarRect.CopyRect(m_prcTimelineEditHeaderRect);
+	m_prcSeekBarRect.left = m_prcTimelineControlPanelRect.right + kSplitterWidth;
 
 	// トラックヘッダの配置
-	m_rcTrackHeaderRect.CopyRect(m_rcTimelineEditPanelRect);
-	m_rcTrackHeaderRect.top = m_rcTimelineEditHeaderRect.bottom + kSplitterHeight;
-	m_rcTrackHeaderRect.right = m_rcTimelineControlPanelRect.right;
+	m_prcTrackHeaderRect.CopyRect(m_prcTimelineEditPanelRect);
+	m_prcTrackHeaderRect.top = m_prcTimelineEditHeaderRect.bottom + kSplitterHeight;
+	m_prcTrackHeaderRect.right = m_prcTimelineControlPanelRect.right;
 
 	// タイムラインデータエリアの配置
-	m_rcTimelineDataRect.CopyRect(m_rcTimelineEditPanelRect);
-	m_rcTimelineDataRect.left = m_rcSeekBarRect.left;
-	m_rcTimelineDataRect.top = m_rcTrackHeaderRect.top;
+	m_prcTimelineDataRect.CopyRect(m_prcTimelineEditPanelRect);
+	m_prcTimelineDataRect.left = m_prcSeekBarRect.left;
+	m_prcTimelineDataRect.top = m_prcTrackHeaderRect.top;
 
 	// タイムラインカーソルヒット領域の配置
-	m_rcTimelineCursorHitArea.CopyRect(m_rcTimelineEditPanelRect);
-	m_rcTimelineCursorHitArea.top = m_rcSeekBarRect.top;
-	m_rcTimelineCursorHitArea.left = m_iTimelineCursorPoint - kTimelineCursorDragArea;
-	m_rcTimelineCursorHitArea.right = m_iTimelineCursorPoint + kTimelineCursorDragArea;
+	m_prcTimelineCursorHitArea.CopyRect(m_prcTimelineEditPanelRect);
+	m_prcTimelineCursorHitArea.top = m_prcSeekBarRect.top;
+	m_prcTimelineCursorHitArea.left = m_iTimelineCursorPoint - kTimelineCursorDragArea;
+	m_prcTimelineCursorHitArea.right = m_iTimelineCursorPoint + kTimelineCursorDragArea;
 
 	// 表示可能フレーム範囲の計算
-	int iDisplayFrameCount = static_cast<int>(floor(m_rcSeekBarRect.Width() / m_fPointPerFrame));
-	m_iTimelineCursorPoint = static_cast<int>(floor(m_rcSeekBarRect.Width() / 2)) + m_rcSeekBarRect.left;
+	int iDisplayFrameCount = static_cast<int>(floor(m_prcSeekBarRect.Width() / m_fPointPerFrame));
+	m_iTimelineCursorPoint = static_cast<int>(floor(m_prcSeekBarRect.Width() / 2)) + m_prcSeekBarRect.left;
 	m_iLeftFrameNumber = m_iTimelineCursorFramePosition - static_cast<int>(floor((iDisplayFrameCount / 2)));
 	m_iRightFrameNumber = m_iTimelineCursorFramePosition + static_cast<int>(ceil((iDisplayFrameCount / 2))) + 1;
 
@@ -1194,7 +1194,7 @@ BOOL CControlUnitAppProtoView::CheckMove(CPoint& point)
 
 	// 重なりチェック
 	// TODO: 重なった先の再判定が必要（再帰処理にするか）
-	CRect rcStaticClip = m_clStaticClipData->GetDisplayRect();
+	//CRect rcStaticClip = m_clStaticClipData->GetDisplayRect();
 	int iMovingClipInFrame = m_clMovingClipData->m_iTimelineInPoint + m_iOperatingClipFrameCount;
 	int iMovingClipOutFrame = m_clMovingClipData->m_iTimelineInPoint + m_clMovingClipData->GetDuration() - 1 + m_iOperatingClipFrameCount;
 	int iStaticClipInFrame = m_clStaticClipData->m_iTimelineInPoint;
@@ -1227,7 +1227,7 @@ BOOL CControlUnitAppProtoView::CheckMove(CPoint& point)
 // クリック位置がシークバー内かを判定する
 BOOL CControlUnitAppProtoView::IsPointInSeekBar(const CPoint& point)
 {
-	if (!(m_rcSeekBarRect.PtInRect(point)))
+	if (!(m_prcSeekBarRect.PtInRect(point)))
 	{
 		return FALSE;
 	}
@@ -1242,13 +1242,13 @@ BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& rcClipRect, const
 	if (CalcClipRect(rcClipRect, const_cast<ClipDataTest*>(clClipData)->m_iTimelineInPoint, const_cast<ClipDataTest*>(clClipData)->GetDuration(), 
 		iMoveFrames, iIntrimFrames, iOuttrimFrames))
 	{
-		if (rcClipRect.left < m_rcTimelineDataRect.left)
+		if (rcClipRect.left < m_prcTimelineDataRect.left)
 		{
-			rcClipRect.left = m_rcTimelineDataRect.left;
+			rcClipRect.left = m_prcTimelineDataRect.left;
 		}
-		if (rcClipRect.right > m_rcTimelineDataRect.right)
+		if (rcClipRect.right > m_prcTimelineDataRect.right)
 		{
-			rcClipRect.right = m_rcTimelineDataRect.right;
+			rcClipRect.right = m_prcTimelineDataRect.right;
 		}
 		return TRUE;
 	}
@@ -1263,7 +1263,7 @@ BOOL CControlUnitAppProtoView::CalcClipRectDisplayPoint(CRect& rcClipRect, const
 BOOL CControlUnitAppProtoView::CalcClipRect(CRect& rcClipRect, const int& iInPoint, const int& iDuration, const int& iMoveFrames /* = 0 */,
 	const int& iIntrimFrames /* = 0 */, const int& iOuttrimFrames/* = 0 */)
 {
-	rcClipRect.top = m_rcTimelineDataRect.top;
+	rcClipRect.top = m_prcTimelineDataRect.top;
 	rcClipRect.bottom = rcClipRect.top + kTrackDefaultHeight;
 	int iLeftScrubingFrameCount = m_iLeftFrameNumber + m_iOperatingFrameCount;
 	int iRightScrubingFrameCount = m_iRightFrameNumber + m_iOperatingFrameCount;
@@ -1395,32 +1395,32 @@ float CControlUnitAppProtoView::SetShuttleSpeedByMoveLength(int iMoveLength)
 {
 	// TODO: そもそも無段階にすべきか？
 	// TODO: 配列なりに変更して効率よく処理したい！
-	int iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragOneSpeed));
+	int iGuideAreaWidth = static_cast<int>(floor(m_prcTimelineDataRect.Width() * kTimelineCursorDragOneSpeed));
 	if (iMoveLength <= iGuideAreaWidth)
 	{
 		return 1.0;
 	}
-	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragTowSpeed));
+	iGuideAreaWidth = static_cast<int>(floor(m_prcTimelineDataRect.Width() * kTimelineCursorDragTowSpeed));
 	if (iMoveLength <= iGuideAreaWidth)
 	{
 		return 2.0;
 	}
-	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragFourSpeed));
+	iGuideAreaWidth = static_cast<int>(floor(m_prcTimelineDataRect.Width() * kTimelineCursorDragFourSpeed));
 	if (iMoveLength <= iGuideAreaWidth)
 	{
 		return 4.0;
 	}
-	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragEightSpeed));
+	iGuideAreaWidth = static_cast<int>(floor(m_prcTimelineDataRect.Width() * kTimelineCursorDragEightSpeed));
 	if (iMoveLength <= iGuideAreaWidth)
 	{
 		return 8.0;
 	}
-	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragSixteenSpeed));
+	iGuideAreaWidth = static_cast<int>(floor(m_prcTimelineDataRect.Width() * kTimelineCursorDragSixteenSpeed));
 	if (iMoveLength <= iGuideAreaWidth)
 	{
 		return 16.0;
 	}
-	iGuideAreaWidth = static_cast<int>(floor(m_rcTimelineDataRect.Width() * kTimelineCursorDragThirtyTwoSpeed));
+	iGuideAreaWidth = static_cast<int>(floor(m_prcTimelineDataRect.Width() * kTimelineCursorDragThirtyTwoSpeed));
 	if (iMoveLength <= iGuideAreaWidth)
 	{
 		return 32.0;
