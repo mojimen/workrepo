@@ -182,7 +182,6 @@ void OpenGLView::OnSize(UINT nType, int cx, int cy)
 		glMatrixMode(GL_PROJECTION);
 		glLoadIdentity();
 		glOrtho(0.0, static_cast<GLdouble>(cx), 0.0, static_cast<GLdouble>(cy), -1.0, 1.0);
-		//glOrtho(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0);
 		glMatrixMode(GL_MODELVIEW);
 
 		glGetIntegerv(GL_VIEWPORT, m_iViewport);
